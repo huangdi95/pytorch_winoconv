@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # added by hd
 *.sw*
 build
@@ -106,3 +107,37 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+=======
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+>>>>>>> f39c6faefd8565e1a8e003e60a0fc4d030effee6
