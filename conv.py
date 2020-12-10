@@ -323,13 +323,17 @@ class Conv2d(_ConvNd):
     def forward(self, input):
         ### added by hd
         if sum(self.weight.shape[-2:]) <= 6 or sum(self.stride) != len(self.stride) or sum(self.dilation) != len(self.dilation):
-          out = F.conv2d(input, self.weight, self.bias, self.stride,
+          if self.bias is not None:
+            tmp = self.bias.half()
+          else:
+            tmp = self.bias
+          out = F.conv2d(input.half(), self.weight.half(), tmp, self.stride,
                          self.padding, self.dilation, self.groups)
         else:
           if use_dwm:
-            out = dwm.dwm2d(input, self.weight, self.bias, self.stride, self.padding)
+            out = dwm.dwm2d(input.half(), self.weight.half(), self.bias, self.stride, self.padding)
           else:
-            out = matrix_conv.conv32(input, self.weight, self.bias, self.stride, self.padding) 
+            out = matrix_conv.conv16(input.half(), self.weight.half(), self.bias, self.stride, self.padding) 
 
         return out
 
@@ -460,13 +464,17 @@ class Conv3d(_ConvNd):
     def forward(self, input):
         ### added by hd
         if sum(self.weight.shape[-3:]) <= 9 or sum(self.stride) != len(self.stride) or sum(self.dilation) != len(self.dilation):
-          out = F.conv3d(input, self.weight, self.bias, self.stride,
+          if self.bias is not None:
+            tmp = self.bias.half()
+          else:
+            tmp = self.bias
+          out = F.conv3d(input.half(), self.weight.half(), tmp, self.stride,
                          self.padding, self.dilation, self.groups)
         else:
           if use_dwm:
-            out = dwm.dwm3d(input, self.weight, self.bias, self.stride, self.padding)
+            out = dwm.dwm3d(input.half(), self.weight.half(), self.bias, self.stride, self.padding)
           else:
-            out = matrix_conv3d.conv32(input, self.weight, self.bias, self.stride, self.padding) 
+            out = matrix_conv3d.conv16(input.half(), self.weight.half(), self.bias, self.stride, self.padding) 
 
         return out
 
