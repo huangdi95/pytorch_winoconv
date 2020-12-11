@@ -8,6 +8,7 @@ from .module import Module
 from .utils import _single, _pair, _triple
 from ..._jit_internal import weak_module, weak_script_method, List
 
+import numpy as np
 import dwm
 import matrix_conv
 import matrix_conv3d
@@ -322,7 +323,7 @@ class Conv2d(_ConvNd):
     @weak_script_method
     def forward(self, input):
         ### added by hd
-        if sum(self.weight.shape[-2:]) <= 6 or sum(self.stride) != len(self.stride) or sum(self.dilation) != len(self.dilation):
+        if (np.array(self.weight.shape) <= np.array([3, 3])).all() or sum(self.stride) != len(self.stride) or sum(self.dilation) != len(self.dilation):
           if self.bias is not None:
             tmp = self.bias.half()
           else:
@@ -463,7 +464,7 @@ class Conv3d(_ConvNd):
     @weak_script_method
     def forward(self, input):
         ### added by hd
-        if sum(self.weight.shape[-3:]) <= 9 or sum(self.stride) != len(self.stride) or sum(self.dilation) != len(self.dilation):
+        if (np.array(self.weight.shape[-3:]) <= np.array([3, 3, 3])).all() or sum(self.stride) != len(self.stride) or sum(self.dilation) != len(self.dilation):
           if self.bias is not None:
             tmp = self.bias.half()
           else:
