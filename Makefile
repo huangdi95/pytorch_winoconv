@@ -42,12 +42,14 @@ STATIC_LIB := $(OBJ_DIR)/libmake_pytorch.a
 # For CUDA < 6.0, comment the *_50 through *_61 lines for compatibility.
 # For CUDA < 8.0, comment the *_60 and *_61 lines for compatibility.
 CUDA_ARCH := -gencode arch=compute_30,code=sm_30 \
-		-gencode arch=compute_35,code=sm_35 \
-		-gencode arch=compute_50,code=sm_50 \
-		-gencode arch=compute_52,code=sm_52 \
-		-gencode arch=compute_60,code=sm_60 \
-		-gencode arch=compute_61,code=sm_61 \
-		-gencode arch=compute_61,code=compute_61
+			-gencode arch=compute_35,code=sm_35 \
+			-gencode=arch=compute_50,code=sm_50 \
+			-gencode=arch=compute_52,code=sm_52 \
+			-gencode=arch=compute_60,code=sm_60 \
+			-gencode=arch=compute_61,code=sm_61 \
+			-gencode=arch=compute_70,code=sm_70 \
+			-gencode=arch=compute_75,code=sm_75 \
+			-gencode=arch=compute_75,code=compute_75
 
 # We will also explicitly add stdc++ to the link target.
 LIBRARIES += stdc++ cudart c10 caffe2 torch torch_python caffe2_gpu
@@ -71,8 +73,8 @@ CXXFLAGS += -MMD -MP
 # Complete build flags.
 COMMON_FLAGS += $(foreach includedir,$(INCLUDE_DIRS),-I$(includedir)) \
 	     -DTORCH_API_INCLUDE_EXTENSION_H -D_GLIBCXX_USE_CXX11_ABI=$(WITH_ABI)
-CXXFLAGS += -pthread -fPIC -fwrapv -std=c++11 $(COMMON_FLAGS) $(WARNINGS)
-NVCCFLAGS += -std=c++11 -ccbin=$(CXX) -Xcompiler -fPIC $(COMMON_FLAGS)
+CXXFLAGS += -pthread -fPIC -fwrapv -std=c++14 $(COMMON_FLAGS) $(WARNINGS)
+NVCCFLAGS += -std=c++14 -ccbin=$(CXX) -Xcompiler -fPIC $(COMMON_FLAGS)
 
 all: $(STATIC_LIB)
 # 	python setup.py install --force
