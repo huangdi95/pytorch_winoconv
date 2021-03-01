@@ -1,5 +1,6 @@
 # added by hd
 *.err
+*.whl
 *.sw*
 build
 objs
