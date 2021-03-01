@@ -18,8 +18,8 @@ void WinoSplit(at::Tensor in_a, at::Tensor out, int block_D, int block_H, int bl
     int C = in_a.sizes()[3];
     int H = in_a.sizes()[1];
     int W = in_a.sizes()[2];
-    int output_block_H = output_block_size;
-    int output_block_W = output_block_size;
+//    int output_block_H = output_block_size;
+//    int output_block_W = output_block_size;
     int pad_h = 0;
     int pad_w = 0;
     winoSplitLauncher2d(in_a.data<Dtype>(), B, H, W, C, pad_h, pad_w, block_H, block_W, nH, nW, out.data<Dtype>());
@@ -29,9 +29,9 @@ void WinoSplit(at::Tensor in_a, at::Tensor out, int block_D, int block_H, int bl
     int D = in_a.sizes()[1];
     int H = in_a.sizes()[2];
     int W = in_a.sizes()[3];
-    int output_block_D = output_block_size;
-    int output_block_H = output_block_size;
-    int output_block_W = output_block_size;
+//    int output_block_D = output_block_size;
+//    int output_block_H = output_block_size;
+//    int output_block_W = output_block_size;
     int pad_d = 0;
     int pad_h = 0;
     int pad_w = 0;

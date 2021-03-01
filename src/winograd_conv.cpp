@@ -88,20 +88,31 @@ void DWM(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
     int nD = (output_D + 1) / 2;
     int nH = (output_H + 1) / 2;
     int nW = (output_W + 1) / 2;
-    int kernel_size = (kernel_D + 1 + (kernel_D - 1) / 3) * (kernel_H + 1 + (kernel_H - 1) / 3) * (kernel_W + 1 + (kernel_W - 1) / 3);
+//    int kernel_size = (kernel_D + 1 + (kernel_D - 1) / 3) * (kernel_H + 1 + (kernel_H - 1) / 3) * (kernel_W + 1 + (kernel_W - 1) / 3);
 
-    if(kernel_D <= 0 and kernel_H <= 0 and kernel_W <= 0) {
-      convLauncherStrideOne3x3(Input.data<T>(), Weight.data<T>(),
-                               tmp_input_buffer.data<T>(), tmp_weight_buffer.data<T>(),
-                               tmp_product_buffer.data<T>(), tmp_ptr_buffer.data<int64_t>(),
-                               B, D, H, W, C, K, kernel_D, kernel_H, kernel_W, pad_d, pad_h, pad_w,
-                               Output.data<T>());
-    } else if(kernel_D <= 10 and kernel_H <= 10 and kernel_W <= 10) {
+//    if(kernel_D <= 0 and kernel_H <= 0 and kernel_W <= 0) {
+//      convLauncherStrideOne3x3(Input.data<T>(), Weight.data<T>(),
+//                               tmp_input_buffer.data<T>(), tmp_weight_buffer.data<T>(),
+//                               tmp_product_buffer.data<T>(), tmp_ptr_buffer.data<int64_t>(),
+//                               B, D, H, W, C, K, kernel_D, kernel_H, kernel_W, pad_d, pad_h, pad_w,
+//                               Output.data<T>());
+    int kernel_size1 = int((kernel_D + 1 + (kernel_D - 1) / 3) * (kernel_H + 1 + (kernel_H - 1) / 3) * (kernel_W + 1 + (kernel_W - 1) / 3));
+//    auto tmp_input_buffer1 = at::empty({kernel_size1*B*nD*nH*nW*C});
+//    auto tmp_weight_buffer1 = at::empty({kernel_size1*C*K});
+//    auto tmp_product_buffer1 = at::empty({kernel_size1*nD*nH*nW*B*K});
+//    auto tmp_ptr_buffer1 = at::empty({3*kernel_size1});
+
+    if(kernel_D <= 10 and kernel_H <= 10 and kernel_W <= 10) {
+      cout << "convLauncheStrideOneLarge!!!!!!" << endl;
       convLauncherStrideOneLarge(Input.data<T>(), Weight.data<T>(),
                                tmp_input_buffer.data<T>(), tmp_weight_buffer.data<T>(),
                                tmp_product_buffer.data<T>(), tmp_ptr_buffer.data<int64_t>(),
                                B, D, H, W, C, K, kernel_D, kernel_H, kernel_W, pad_d, pad_h, pad_w,
                                Output.data<T>());
+//    if(kernel_D <= 10 and kernel_H <= 10 and kernel_W <= 10) {
+//      convLauncherStrideOneLarge2(Input.data<T>(), Weight.data<T>(),
+//                               B, D, H, W, C, K, kernel_D, kernel_H, kernel_W, pad_d, pad_h, pad_w,
+//                               Output.data<T>());
     } else {
       cout << "kernel_size: " << kernel_H << ", " << kernel_W << endl;
       cout << "stride: 1" << endl;
@@ -117,5 +128,5 @@ void DWM(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
 
 template void DWM<float>(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
               at::Tensor tmp_input_buffer, at::Tensor tmp_weight_buffer, at::Tensor tmp_product_buffer, at::Tensor tmp_ptr_buffer);
-template void DWM<at::Half>(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
-              at::Tensor tmp_input_buffer, at::Tensor tmp_weight_buffer, at::Tensor tmp_product_buffer, at::Tensor tmp_ptr_buffer);
+//template void DWM<at::Half>(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
+//              at::Tensor tmp_input_buffer, at::Tensor tmp_weight_buffer, at::Tensor tmp_product_buffer, at::Tensor tmp_ptr_buffer);

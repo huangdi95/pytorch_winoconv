@@ -33,6 +33,11 @@ void convLauncherStrideOneLarge(const T *input, const T *weight,
                               int B, int D, int H, int W, int C, int K,
                               int kernel_D, int kernel_H, int kernel_W, int pad_d, int pad_h, int pad_w,
                               T *output);
+template <typename T>
+void convLauncherStrideOneLarge2(const T *input, const T *weight,
+                              int B, int D, int H, int W, int C, int K,
+                              int kernel_D, int kernel_H, int kernel_W, int pad_d, int pad_h, int pad_w,
+                              T *output);
 //template <typename T>
 static void tensorCopy(int *D_s, int *H_s, int *W_s, int *D_e, int *H_e, int *W_e, int *num_split, int **D_start, int **D_end, int **H_start, int **H_end, int **W_start, int **W_end) {
     *D_start = new int[*num_split];

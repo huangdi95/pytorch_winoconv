@@ -19,6 +19,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m){
 //  m.def("AddGPU", &AddGPU<at::Half>);
   m.def("WinoSplit", &WinoSplit<float>);
   m.def("WinoConcat", &WinoConcat<float>);
-//  m.def("DWM", &DWM<float>);
-  m.def("DWM", &DWM<at::Half>);
+  m.def("DWM", &DWM<float>);
+//  m.def("DWM", &DWM<at::Half>);
 }
