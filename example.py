@@ -99,7 +99,7 @@ import matrix_conv3d
 def test_dwm2d():
     x = torch.rand(1, 32*7, 10, 10).cuda()
     w = torch.rand(32, 32*7, 7, 7).cuda()
-    out1 = dwm.dwm2d(x.half(), w.half(), None, (1, 1))
+    out1 = dwm.dwm2d(x.float(), w.float(), None, (1, 1))
     out3 = matrix_conv.conv16(x.half(), w.half())
     out2 = torch.nn.functional.conv2d(x.double(), w.double(), bias=None, stride=1, padding=0, dilation=1, groups=1)
     print(((out1.double() - out2)/out2).abs().mean())
@@ -110,10 +110,12 @@ def test_dwm2d():
 
 def test_dwm3d():
     x = torch.rand(1, 32, 10, 10, 10).cuda()
-    w = torch.rand(32, 32, 7, 7, 7).cuda()
-    out1 = dwm.dwm3d(x.half(), w.half(), None, (1, 1, 1))
+    w = torch.rand(32, 32, 3, 3, 3).cuda()
+    out1 = dwm.dwm3d(x.float(), w.float(), None, (1, 1, 1))
     out2 = torch.nn.functional.conv3d(x.double(), w.double(), bias=None, stride=1, padding=0, dilation=1, groups=1)
+    out3 = torch.nn.functional.conv3d(x.float(), w.float(), bias=None, stride=1, padding=0, dilation=1, groups=1)
     print(((out1.double() - out2)/out2).abs().mean())
+    print(((out3.double() - out2)/out2).abs().mean())
     return out1.double()
 
 def test_matrix_conv2d():
@@ -151,10 +153,10 @@ def test_matrix_conv3d_fp16():
     
 
 if __name__ == '__main__':
-#    test_dwm2d()
-#    test_dwm3d()
+    test_dwm2d()
+    test_dwm3d()
 #    test_matrix_conv2d()
-    test_matrix_conv3d()
+#    test_matrix_conv3d()
  #   test_matrix_conv2d_fp16()
-    test_matrix_conv3d_fp16()
+#    test_matrix_conv3d_fp16()
 
