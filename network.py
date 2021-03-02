@@ -34,28 +34,72 @@ class Dwm(nn.Module):
         y = dwm.dwm3d(x, w, None, (1, 1, 1))
         return y
 
-x = torch.rand(1, 32, 8, 28, 28).cuda()
-w = torch.rand(32, 32, 3, 3, 3).cuda()
+def dwm3d():
+    x = torch.rand(512, 32, 8, 28, 28).cuda()
+    w = torch.rand(32, 32, 7, 7, 7).cuda()
+    
+    
+#    y = F.conv3d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+#    torch.cuda.synchronize()
+#    t = time.perf_counter()
+#    y = F.conv3d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+#    y = F.conv3d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+#    torch.cuda.synchronize()
+#    
+#    Time = time.perf_counter() - t
+#    print('cudnn:', Time)
+    
+    
+    
+    print('--- warm up ----')
+    y = dwm.dwm3d(x, w, None, (1, 1, 1))
+    y = dwm.dwm3d(x, w, None, (1, 1, 1))
+    torch.cuda.synchronize()
+    t = time.perf_counter()
+    print('----------------')
+    y = dwm.dwm3d(x, w, None, (1, 1, 1))
+    torch.cuda.synchronize()
+    
+    Time = time.perf_counter() - t
+    print('DWM:', Time)
 
+def dwm2d():
+    x = torch.rand(1, 128, 28, 28).cuda()
+    w = torch.rand(128, 128, 3, 3).cuda()
+    
+    
+#    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+#    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+#    torch.cuda.synchronize()
+#    t = time.perf_counter()
+#    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+#    torch.cuda.synchronize()
+#    Time = time.perf_counter() - t
+#    print('cudnn:', Time)
 
-y = F.conv3d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
-y = F.conv3d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
-t = time.perf_counter()
-y = F.conv3d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
-torch.cuda.synchronize()
+#    torch.cuda.synchronize()
+#    t = time.perf_counter()
+#    y = F.conv2d(x, w, bias=None, stride=2, padding=0, dilation=1, groups=1)
+#    torch.cuda.synchronize()
+#    
+#    Time = time.perf_counter() - t
+#    print('cudnn:', Time)
+    
+    
+    
+    print('--- warm up ----')
+    y = dwm.dwm2d(x, w, None, (1, 1))
+    y = dwm.dwm2d(x, w, None, (1, 1))
+    print('----------------')
+    torch.cuda.synchronize()
+    t = time.perf_counter()
+    y = dwm.dwm2d(x, w, None, (1, 1))
+    torch.cuda.synchronize()
+    
+    Time = time.perf_counter() - t
+    print('DWM:', Time)
 
-Time = time.perf_counter() - t
-print(Time)
-
-
-
-print('--- warm up ----')
-y = dwm.dwm3d(x, w, None, (1, 1, 1))
-y = dwm.dwm3d(x, w, None, (1, 1, 1))
-print('----------------')
-t = time.perf_counter()
-y = dwm.dwm3d(x, w, None, (1, 1, 1))
-torch.cuda.synchronize()
-
-Time = time.perf_counter() - t
-print(Time)
+if __name__ == '__main__':
+    dwm2d()
+#    print('===================')
+#    dwm3d()
