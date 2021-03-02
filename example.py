@@ -97,15 +97,15 @@ import matrix_conv3d
 #    print(x_trans.shape)
 
 def test_dwm2d():
-    x = torch.rand(1, 32*7, 10, 10).cuda()
+    x = torch.rand(10, 32*7, 10, 10).cuda()
     w = torch.rand(32, 32*7, 7, 7).cuda()
     out1 = dwm.dwm2d(x.float(), w.float(), None, (1, 1))
     out3 = matrix_conv.conv16(x.half(), w.half())
     out2 = torch.nn.functional.conv2d(x.double(), w.double(), bias=None, stride=1, padding=0, dilation=1, groups=1)
     print(((out1.double() - out2)/out2).abs().mean())
-    print(((out3.double() - out2)/out2).abs().mean())
-    print((out3.double()).abs().mean())
-    print(((out1.double() - out3.double())/out1.double()).abs().mean())
+#    print(((out3.double() - out2)/out2).abs().mean())
+#    print((out3.double()).abs().mean())
+#    print(((out1.double() - out3.double())/out1.double()).abs().mean())
     return out1.double()
 
 def test_dwm3d():
@@ -154,7 +154,7 @@ def test_matrix_conv3d_fp16():
 
 if __name__ == '__main__':
     test_dwm2d()
-    test_dwm3d()
+#    test_dwm3d()
 #    test_matrix_conv2d()
 #    test_matrix_conv3d()
  #   test_matrix_conv2d_fp16()

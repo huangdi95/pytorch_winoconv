@@ -66,7 +66,7 @@ echo $(which python3)
 nvidia-smi --format=csv --query-gpu=name,driver_version,power.limit
 
 #- Job step
-python example.py
-#python network.py
+#python example.py
+nvprof python network.py
 #- End
 echo "Job end at $(date "+%Y-%m-%d %H:%M:%S")"
