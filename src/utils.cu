@@ -10,3 +10,12 @@ __global__ void forwardAssign(const T *Input, const T *Weight, T *tmp_data_buffe
 	Weight_ptrs_gpu[tx] = Weight + tx * K * C;
 	tmp_product_ptrs_gpu[tx] = tmp_data_buffer + tx * nD * nH * nW * B * K;
 }
+
+template <typename T>
+__global__ void forwardAssign2D(const T *Input, const T *Weight, T *tmp_data_buffer, const T **Input_ptrs_gpu, const T **Weight_ptrs_gpu, T **tmp_product_ptrs_gpu, int C, int B, int nH, int nW, int K) {
+	int tx = threadIdx.x; // kernel_size
+	
+	Input_ptrs_gpu[tx] = Input + tx * B * nH * nW * C;
+	Weight_ptrs_gpu[tx] = Weight + tx * K * C;
+	tmp_product_ptrs_gpu[tx] = tmp_data_buffer + tx * nH * nW * B * K;
+}

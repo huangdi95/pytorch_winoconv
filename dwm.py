@@ -1,5 +1,5 @@
 import torch
-from MakePytorchBackend import DWM
+from MakePytorchBackend import DWM, DWM2D
 import time
 
 def dwm3d(input, kernel, bias=None, stride=(1, 1, 1), padding=0, groups=1):
@@ -41,8 +41,8 @@ def dwm2d(input, kernel, bias=None, stride=(1, 1), padding=0, groups=1):
 
 
 def dwm3d_(x, w, stride=1):
-    t1 = time.perf_counter()
     torch.cuda.synchronize()
+    t1 = time.perf_counter()
     B = int(list(x.size())[0])
     C = int(list(x.size())[1])
     D = int(list(x.size())[2])
@@ -61,14 +61,7 @@ def dwm3d_(x, w, stride=1):
     nW = int((output_W + 1) / 2)
     torch.cuda.synchronize()
     t2 = time.perf_counter()
-#    tmp_input_buffer = torch.zeros(kernel_size, B, nD, nH, nW, C).cuda().type_as(x)
-#    tmp_weight_buffer = torch.zeros(kernel_size, C, K).cuda().type_as(x)
-#    tmp_product_buffer = torch.zeros(kernel_size * nD * nH * nW * B * K).cuda().type_as(x)
-#    tmp_ptr_buffer = torch.zeros(3 * kernel_size).cuda().long()
-#    tmp_input_buffer = torch.Tensor((kernel_size, B, nD, nH, nW, C), dtype=x.dtype, device=x.device)
-#    tmp_weight_buffer = torch.Tensor((kernel_size, C, K), dtype=x.dtype, device=x.device)
-#    tmp_product_buffer = torch.Tensor((kernel_size * nD * nH * nW * B * K), dtype=x.dtype, device=x.device)
-#    tmp_ptr_buffer = torch.Tensor((3 * kernel_size), dtype=torch.long, device=x.device)
+
     tmp_input_buffer = torch.empty(kernel_size, B, nD, nH, nW, C, dtype=x.dtype, device=x.device)
     tmp_weight_buffer = torch.empty(kernel_size, C, K, dtype=x.dtype, device=x.device)
     tmp_product_buffer = torch.empty(kernel_size * nD * nH * nW * B * K, dtype=x.dtype, device=x.device)
@@ -89,24 +82,29 @@ def dwm3d_(x, w, stride=1):
         tmp_input_buffer, tmp_weight_buffer, tmp_product_buffer, tmp_ptr_buffer)
     torch.cuda.synchronize()
     t6 = time.perf_counter()
-    print('init var:', t2 - t1)
-    print('init tmp:', t3 - t2)
-    print('init out:', t4 - t3)
-    print('permute: ', t5 - t4)
-    print('dwm:     ', t6 - t5)
 
     del tmp_input_buffer
     del tmp_weight_buffer
     del tmp_product_buffer
     del tmp_ptr_buffer
+    torch.cuda.synchronize()
+    t7 = time.perf_counter()
 
     out = out.permute(0, 4, 1, 2, 3).contiguous()
     torch.cuda.synchronize()
-    t7 = time.perf_counter()
-    print('pm o:    ', t7 - t6)
+    t8 = time.perf_counter()
+    print('init var:', t2 - t1)
+    print('init tmp:', t3 - t2)
+    print('init out:', t4 - t3)
+    print('permute: ', t5 - t4)
+    print('dwm:     ', t6 - t5)
+    print('del buff:', t7 - t6)
+    print('pm o:    ', t8 - t7)
     return out
 
 def dwm2d_(x, w, stride=1):
+    torch.cuda.synchronize()
+    t1 = time.perf_counter()
     B = int(list(x.size())[0])
     C = int(list(x.size())[1])
     H = int(list(x.size())[2])
@@ -119,27 +117,43 @@ def dwm2d_(x, w, stride=1):
     output_W = int((W  - w_W) / stride + 1)
     nH = int((output_H + 1) / 2)
     nW = int((output_W + 1) / 2)
-    tmp_input_buffer = torch.zeros(kernel_size, B, 1, nH, nW, C).cuda().type_as(x)
-    tmp_weight_buffer = torch.zeros(kernel_size, C, K).cuda().type_as(x)
-    tmp_product_buffer = torch.zeros(kernel_size * 1 * nH * nW * B * K).cuda().type_as(x)
-    tmp_ptr_buffer = torch.zeros(3 * kernel_size).cuda().long()
+    torch.cuda.synchronize()
+    t2 = time.perf_counter()
+    tmp_input_buffer = torch.empty(kernel_size, B, nH, nW, C, dtype=x.dtype, device=x.device)
+    tmp_weight_buffer = torch.empty(kernel_size, C, K, dtype=x.dtype, device=x.device)
+    tmp_product_buffer = torch.empty(kernel_size * nH * nW * B * K, dtype=x.dtype, device=x.device)
+    tmp_ptr_buffer = torch.empty(3 * kernel_size, dtype=torch.long, device=x.device)
+    torch.cuda.synchronize()
+    t3 = time.perf_counter()
 
-    out = torch.zeros(B, 1, output_H, output_W, K).cuda().type_as(x)
+    out = torch.zeros(B, output_H, output_W, K, dtype=x.dtype, device=x.device)
+    t4 = time.perf_counter()
 
-    x = x.unsqueeze(2)
-    w = w.unsqueeze(2)
-
-    x = x.permute(0, 2, 3, 4, 1).contiguous()
-    w = w.permute(2, 3, 4, 1, 0).contiguous()
+    x = x.permute(0, 2, 3, 1).contiguous()
+    w = w.permute(2, 3, 1, 0).contiguous()
 #    print(w.shape)
-    DWM(x, w, out, stride,
+    torch.cuda.synchronize()
+    t5 = time.perf_counter()
+    DWM2D(x, w, out, stride,
         tmp_input_buffer, tmp_weight_buffer, tmp_product_buffer, tmp_ptr_buffer)
+    torch.cuda.synchronize()
+    t6 = time.perf_counter()
 
     del tmp_input_buffer
     del tmp_weight_buffer
     del tmp_product_buffer
     del tmp_ptr_buffer
 
-    out = out[:, 0, :, :, :]
+    torch.cuda.synchronize()
+    t7 = time.perf_counter()
     out = out.permute(0, 3, 1, 2).contiguous()
+    torch.cuda.synchronize()
+    t8 = time.perf_counter()
+    print('init var:', t2 - t1)
+    print('init tmp:', t3 - t2)
+    print('init out:', t4 - t3)
+    print('permute: ', t5 - t4)
+    print('dwm:     ', t6 - t5)
+    print('del buff:', t7 - t6)
+    print('pm o:    ', t8 - t7)
     return out

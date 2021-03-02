@@ -7,3 +7,6 @@ void WinoConcat(at::Tensor in_a, at::Tensor out, int output_block_size, bool two
 template <typename Dtype>
 void DWM(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
               at::Tensor tmp_input_buffer, at::Tensor tmp_weight_buffer, at::Tensor tmp_product_buffer, at::Tensor tmp_ptr_buffer);
+template <typename Dtype>
+void DWM2D(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
+              at::Tensor tmp_input_buffer, at::Tensor tmp_weight_buffer, at::Tensor tmp_product_buffer, at::Tensor tmp_ptr_buffer);

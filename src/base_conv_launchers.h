@@ -17,16 +17,6 @@ void convLauncherStrideOne3x3(const T *input, const T *weight,
                               T *output);
 
 template <typename T>
-void transform(const T *input, const T *weight, const T *tmp_product_buffer,
-                   T *tmp_input_buffer, T *tmp_weight_buffer, T *output,
-                   int B, int D, int H, int W, int C, int K,
-                   int kernel_D, int kernel_H, int kernel_W, int pad_d, int pad_h, int pad_w);
-template <typename T>
-void split(const T *input, const T *weight, const T *tmp_product_buffer,
-                   T *tmp_input_buffer, T *tmp_weight_buffer, T *output,
-                   int B, int D, int H, int W, int C, int K,
-                   int kernel_D, int kernel_H, int kernel_W, int pad_d, int pad_h, int pad_w);
-template <typename T>
 void convLauncherStrideOneLarge(const T *input, const T *weight,
                               T *tmp_input_buffer, T *tmp_weight_buffer,
                               T *tmp_product_buffer, const int64_t *tmp_ptr_buffer,
@@ -34,11 +24,13 @@ void convLauncherStrideOneLarge(const T *input, const T *weight,
                               int kernel_D, int kernel_H, int kernel_W, int pad_d, int pad_h, int pad_w,
                               T *output);
 template <typename T>
-void convLauncherStrideOneLarge2(const T *input, const T *weight,
-                              int B, int D, int H, int W, int C, int K,
-                              int kernel_D, int kernel_H, int kernel_W, int pad_d, int pad_h, int pad_w,
+void convLauncherStrideOneLarge2D(const T *input, const T *weight,
+                              T *tmp_input_buffer, T *tmp_weight_buffer,
+                              T *tmp_product_buffer, const int64_t *tmp_ptr_buffer,
+                              int B, int H, int W, int C, int K,
+                              int kernel_H, int kernel_W, int pad_h, int pad_w,
                               T *output);
-//template <typename T>
+
 static void tensorCopy(int *D_s, int *H_s, int *W_s, int *D_e, int *H_e, int *W_e, int *num_split, int **D_start, int **D_end, int **H_start, int **H_end, int **W_start, int **W_end) {
     *D_start = new int[*num_split];
     *H_start = new int[*num_split];
@@ -54,7 +46,6 @@ static void tensorCopy(int *D_s, int *H_s, int *W_s, int *D_e, int *H_e, int *W_
     std::copy(W_e, W_e + *num_split, *W_end);
 }
 
-//template <typename T>
 static void splitControl(int D, int H, int W, int *num_split, int **D_start, int **D_end, int **H_start, int **H_end, int **W_start, int **W_end) {
     if (D == 1 && H == 1 && W == 1) {
         int D_s[] = {0}; 
@@ -387,4 +378,119 @@ static void splitControl(int D, int H, int W, int *num_split, int **D_start, int
     }
 }
 
+static void tensorCopy2D(int *H_s, int *W_s, int *H_e, int *W_e, int *num_split, int **H_start, int **H_end, int **W_start, int **W_end) {
+    *H_start = new int[*num_split];
+    *W_start = new int[*num_split];
+    *H_end = new int[*num_split];
+    *W_end = new int[*num_split];
+    std::copy(H_s, H_s + *num_split, *H_start);
+    std::copy(W_s, W_s + *num_split, *W_start);
+    std::copy(H_e, H_e + *num_split, *H_end);
+    std::copy(W_e, W_e + *num_split, *W_end);
+}
+
+static void splitControl2D(int H, int W, int *num_split, int **H_start, int **H_end, int **W_start, int **W_end) {
+    if (H == 1 && W == 1) {
+        int H_s[] = {0}; 
+        int H_e[] = {1}; 
+        int W_s[] = {0}; 
+        int W_e[] = {1}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 1 && W == 3) {
+        int H_s[] = {0}; 
+        int H_e[] = {1}; 
+        int W_s[] = {0}; 
+        int W_e[] = {3}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 1 && W == 4) {
+        int H_s[] = {0, 0}; 
+        int H_e[] = {1, 1}; 
+        int W_s[] = {0, 2}; 
+        int W_e[] = {2, 4}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 1 && W == 5) {
+        int H_s[] = {0, 0}; 
+        int H_e[] = {1, 1}; 
+        int W_s[] = {0, 3}; 
+        int W_e[] = {3, 5}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 1 && W == 7) {
+        int H_s[] = {0, 0, 0}; 
+        int H_e[] = {1, 1, 1}; 
+        int W_s[] = {0, 3, 6}; 
+        int W_e[] = {3, 6, 7}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 3 && W == 1) {
+        int H_s[] = {0}; 
+        int H_e[] = {3}; 
+        int W_s[] = {0}; 
+        int W_e[] = {1}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 3 && W == 3) {
+        int H_s[] = {0}; 
+        int H_e[] = {3}; 
+        int W_s[] = {0}; 
+        int W_e[] = {3}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 3 && W == 4) {
+        int H_s[] = {0, 0}; 
+        int H_e[] = {3, 3}; 
+        int W_s[] = {0, 2}; 
+        int W_e[] = {2, 4}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 3 && W == 5) {
+        int H_s[] = {0, 0}; 
+        int H_e[] = {3, 3}; 
+        int W_s[] = {0, 3}; 
+        int W_e[] = {3, 5}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 4 && W == 3) {
+        int H_s[] = {0, 2}; 
+        int H_e[] = {2, 4}; 
+        int W_s[] = {0, 0}; 
+        int W_e[] = {3, 3}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 4 && W == 4) {
+        int H_s[] = {0, 0, 2, 2}; 
+        int H_e[] = {2, 2, 4, 4}; 
+        int W_s[] = {0, 2, 0, 2}; 
+        int W_e[] = {2, 4, 2, 4}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 5 && W == 5) {
+        int H_s[] = {0, 0, 3, 3}; 
+        int H_e[] = {3, 3, 5, 5}; 
+        int W_s[] = {0, 3, 0, 3}; 
+        int W_e[] = {3, 5, 3, 5}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 7 && W == 7) {
+        int H_s[] = {0, 0, 0, 3, 3, 3, 6, 6, 6}; 
+        int H_e[] = {3, 3, 3, 6, 6, 6, 7, 7, 7}; 
+        int W_s[] = {0, 3, 6, 0, 3, 6, 0, 3, 6}; 
+        int W_e[] = {3, 6, 7, 3, 6, 7, 3, 6, 7}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else if (H == 9 && W == 9) {
+        int H_s[] = {0, 0, 0, 3, 3, 3, 6, 6, 6}; 
+        int H_e[] = {3, 3, 3, 6, 6, 6, 9, 9, 9}; 
+        int W_s[] = {0, 3, 6, 0, 3, 6, 0, 3, 6}; 
+        int W_e[] = {3, 6, 9, 3, 6, 9, 3, 6, 9}; 
+        *num_split = sizeof(H_s) / sizeof(H_s[0]); 
+        tensorCopy2D(H_s, W_s, H_e, W_e, num_split, H_start, H_end, W_start, W_end);
+    } else {
+      std::cout << H << "x" << W << " not implemented yet." << std::endl;
+      exit(-1);
+    }
+}
 #endif //BASE_CONV_LAUNCHERS_H_
