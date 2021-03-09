@@ -102,6 +102,82 @@ def dwm3d_(x, w, stride=1):
     print('pm o:    ', t8 - t7)
     return out
 
+def test(H=3, W=3):
+    torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    if (H == 1 and W == 1):
+        H_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([1], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([1], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 1 and W == 3):
+        H_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([1], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 1 and W == 4):
+        H_s = torch.tensor([0, 0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([1, 1], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 2], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([2, 4], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 1 and W == 5):
+        H_s = torch.tensor([0, 0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([1, 1], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 3], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3, 5], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 1 and W == 7):
+        H_s = torch.tensor([0, 0, 0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([1, 1, 1], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 3, 6], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3, 6, 7], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 3 and W == 1):
+        H_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([3], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([1], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 3 and W == 3):
+        H_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([3], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 3 and W == 4):
+        H_s = torch.tensor([0, 0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([3, 3], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 2], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([2, 4], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 3 and W == 5):
+        H_s = torch.tensor([0, 0], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([3, 3], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 3], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3, 5], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 4 and W == 3):
+        H_s = torch.tensor([0, 2], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([2, 4], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 0], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3, 3], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 4 and W == 4):
+        H_s = torch.tensor([0, 0, 2, 2], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([2, 2, 4, 4], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 2, 0, 2], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([2, 4, 2, 4], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 5 and W == 5):
+        H_s = torch.tensor([0, 0, 3, 3], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([3, 3, 5, 5], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 3, 0, 3], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3, 5, 3, 5], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 7 and W == 7):
+        H_s = torch.tensor([0, 0, 0, 3, 3, 3, 6, 6, 6], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([3, 3, 3, 6, 6, 6, 7, 7, 7], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 3, 6, 0, 3, 6, 0, 3, 6], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3, 6, 7, 3, 6, 7, 3, 6, 7], dtype=torch.int, device=torch.device('cuda'));
+    elif (H == 9 and W == 9):
+        H_s = torch.tensor([0, 0, 0, 3, 3, 3, 6, 6, 6], dtype=torch.int, device=torch.device('cuda'));
+        H_e = torch.tensor([3, 3, 3, 6, 6, 6, 9, 9, 9], dtype=torch.int, device=torch.device('cuda'));
+        W_s = torch.tensor([0, 3, 6, 0, 3, 6, 0, 3, 6], dtype=torch.int, device=torch.device('cuda'));
+        W_e = torch.tensor([3, 6, 9, 3, 6, 9, 3, 6, 9], dtype=torch.int, device=torch.device('cuda'));
+    num_split = len(H_s);
+    return num_split, H_s, H_e, W_s, W_e
+
+
 def dwm2d_(x, w, stride=1):
     torch.cuda.synchronize()
     t1 = time.perf_counter()
@@ -134,26 +210,38 @@ def dwm2d_(x, w, stride=1):
 #    print(w.shape)
     torch.cuda.synchronize()
     t5 = time.perf_counter()
-    DWM2D(x, w, out, stride,
-        tmp_input_buffer, tmp_weight_buffer, tmp_product_buffer, tmp_ptr_buffer)
+    num_split, H_s, H_e, W_s, W_e = test(w_H, w_W)
+    tmp_out_buffer = torch.empty(num_split*output_H*output_W*K, dtype=x.dtype, device=x.device)
     torch.cuda.synchronize()
     t6 = time.perf_counter()
+
+    torch.cuda.synchronize()
+    t7 = time.perf_counter()
+    print('handle:', torch.cuda.current_blas_handle())
+    DWM2D(x, w, out, stride,
+        tmp_input_buffer, tmp_weight_buffer, tmp_product_buffer, tmp_ptr_buffer,
+        num_split, H_s, H_e, W_s, W_e, tmp_out_buffer)
+    torch.cuda.synchronize()
+    t8 = time.perf_counter()
 
     del tmp_input_buffer
     del tmp_weight_buffer
     del tmp_product_buffer
     del tmp_ptr_buffer
+    del tmp_out_buffer
 
     torch.cuda.synchronize()
-    t7 = time.perf_counter()
+    t9 = time.perf_counter()
     out = out.permute(0, 3, 1, 2).contiguous()
     torch.cuda.synchronize()
-    t8 = time.perf_counter()
+    t10 = time.perf_counter()
     print('init var:', t2 - t1)
     print('init tmp:', t3 - t2)
     print('init out:', t4 - t3)
     print('permute: ', t5 - t4)
-    print('dwm:     ', t6 - t5)
-    print('del buff:', t7 - t6)
-    print('pm o:    ', t8 - t7)
+    print('tmp_out: ', t6 - t5)
+    print('nothing: ', t7 - t6)
+    print('dwm:     ', t8 - t7)
+    print('del buff:', t9 - t8)
+    print('pm o:    ', t10 - t9)
     return out
