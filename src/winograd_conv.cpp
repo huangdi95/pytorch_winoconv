@@ -137,12 +137,7 @@ void DWM2D(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
   using std::chrono::duration_cast;
   using std::chrono::duration;
   using std::chrono::milliseconds;
-  auto tt1 = high_resolution_clock::now();
-
-  clock_t cpu_startTime, cpu_endTime;
-
-  double cpu_ElapseTime=0;
-  cpu_startTime = clock();
+//  auto tt1 = high_resolution_clock::now();
 
   int B = Input.sizes()[0];
   int H = Input.sizes()[1];
@@ -202,15 +197,9 @@ void DWM2D(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
     int nW = (output_W + 1) / 2;
     int kernel_size1 = int((kernel_H + 1 + (kernel_H - 1) / 3) * (kernel_W + 1 + (kernel_W - 1) / 3));
     
-    cpu_endTime = clock();
-
-    cpu_ElapseTime = ((cpu_endTime - cpu_startTime)/CLOCKS_PER_SEC);
-    
-    cout << "cpp time: " << cpu_ElapseTime << endl;
-    auto tt2 = high_resolution_clock::now();
-    duration<double, std::milli> ms_double = tt2 - tt1;
-    std::cout << ms_double.count() << " ms" << endl;
-
+//    auto tt2 = high_resolution_clock::now();
+//    duration<double, std::milli> ms_double = tt2 - tt1;
+//    std::cout << ms_double.count() << " ms" << endl;
 
     if(kernel_H <= 10 and kernel_W <= 10) {
       convLauncherStrideOneLarge2D(Input.data<T>(), Weight.data<T>(),
