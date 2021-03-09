@@ -15,6 +15,8 @@ import time
 #    nn.Conv2d(20,64,5),
 #    nn.ReLU(),
 #).cuda()
+#torch.backends.cudnn.deterministic = True
+
 class Dwm(nn.Module):
     """
     A vanilla multi-head masked self-attention layer with a projection at the end.
@@ -64,29 +66,28 @@ def dwm3d():
     print('DWM:', Time)
 
 def dwm2d():
-    x = torch.rand(1, 128, 28, 28).cuda()
-    w = torch.rand(128, 128, 3, 3).cuda()
+    x = torch.rand(1, 128, 100, 100).cuda()
+    w = torch.rand(128, 128, 7, 7).cuda()
     
     
-#    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
-#    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
-#    torch.cuda.synchronize()
-#    t = time.perf_counter()
-#    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
-#    torch.cuda.synchronize()
-#    Time = time.perf_counter() - t
-#    print('cudnn:', Time)
+    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+    torch.cuda.synchronize()
+    t = time.perf_counter()
+    y = F.conv2d(x, w, bias=None, stride=1, padding=0, dilation=1, groups=1)
+    torch.cuda.synchronize()
+    Time = time.perf_counter() - t
+    print('cudnn:', Time)
 
-#    torch.cuda.synchronize()
-#    t = time.perf_counter()
-#    y = F.conv2d(x, w, bias=None, stride=2, padding=0, dilation=1, groups=1)
-#    torch.cuda.synchronize()
-#    
-#    Time = time.perf_counter() - t
-#    print('cudnn:', Time)
+    torch.cuda.synchronize()
+    t = time.perf_counter()
+    y = F.conv2d(x, w, bias=None, stride=2, padding=0, dilation=1, groups=1)
+    torch.cuda.synchronize()
     
-    
-    
+    Time = time.perf_counter() - t
+    print('cudnn:', Time)
+   
+   
     print('--- warm up ----')
     y = dwm.dwm2d(x, w, None, (1, 1))
     y = dwm.dwm2d(x, w, None, (1, 1))
@@ -100,6 +101,7 @@ def dwm2d():
     print('DWM:', Time)
 
 if __name__ == '__main__':
-    dwm2d()
+    for i in range(100000):
+        dwm2d()
 #    print('===================')
 #    dwm3d()
