@@ -267,11 +267,29 @@ void convLauncherStrideOneLarge2D<float>(const float *input, const float *weight
     //cudaEventElapsedTime(&elapsedTime, t3, t4);
     //printf("malloc cpy time: %f ms\n" ,elapsedTime);
 
-    dim3 bDim1(C, 1, 1);
-    dim3 gDim1(nH*nW, B, num_split);
-    dim3 bDim2(K, 1, 1);
-    dim3 gDim2(C, num_split, 1);
-    inputNorm2WinoTransform2D <float> <<<gDim1, bDim1>>> (input, tmp_input_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, nH, nW, B, H, W, C, pad_h, pad_w);
+//    dim3 bDim1(C, 1, 1);
+//    dim3 gDim1(nH*nW, B, num_split);
+//    int *time = nullptr;
+////    cudaMalloc((void**)&time, num_split**nH*nW*B*C*sizeof(int));
+//    cudaMalloc((void**)&time, 9*sizeof(int));
+//    inputNorm2WinoTransform2D <float> <<<gDim1, bDim1>>> (input, tmp_input_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, nH, nW, B, H, W, C, pad_h, pad_w, time);
+//    int time_host[9];
+//    cudaMemcpy(time_host, time, 9*sizeof(int), cudaMemcpyDeviceToHost);
+//    for(int i = 0; i < 9; i++) {
+//        fprintf(stdout, "%d:%ld=%f(ms)\n", i,time_host[i], ((float)(time_host[i])/1620000000.0f)*1000.0);
+//    }
+    at::cuda::getStreamFromPool
+    int N = C * nH * nW * B * num_split;
+    cout << N << endl;
+    int *time = nullptr;
+//    cudaMalloc((void**)&time, num_split**nH*nW*B*C*sizeof(int));
+    cudaMalloc((void**)&time, 9*sizeof(int));
+    inputNorm2WinoTransform2D2 <float> <<<(N - 1 + 256) / 256, 256>>> (input, tmp_input_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, nH, nW, B, H, W, C, pad_h, pad_w, time, N);
+    int time_host[9];
+    cudaMemcpy(time_host, time, 9*sizeof(int), cudaMemcpyDeviceToHost);
+    for(int i = 0; i < 9; i++) {
+        fprintf(stdout, "%d:%ld=%f(ms)\n", i,time_host[i], ((float)(time_host[i])/1620000000.0f)*1000.0);
+    }
 
     //cudaEventCreate(&t5);
     //cudaEventRecord(t5,0);
@@ -283,6 +301,8 @@ void convLauncherStrideOneLarge2D<float>(const float *input, const float *weight
     //cudaEventElapsedTime(&elapsedTime, t4, t5);
     //printf("input trans time : %f ms\n" ,elapsedTime);
 
+    dim3 bDim2(K, 1, 1);
+    dim3 gDim2(C, num_split, 1);
     wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (weight, tmp_weight_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, kernel_H, kernel_W, C, K);
 
     //cudaEventCreate(&t6);
