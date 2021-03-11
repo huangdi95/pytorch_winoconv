@@ -1,5 +1,5 @@
 template <typename T>
-__device__ void wNorm2WinoCalculation2D(T *input_patch, T* output_patch, int H, int W) {
+__device__ __forceinline__ void wNorm2WinoCalculation2D(T *input_patch, T* output_patch, int H, int W) {
     if(H == 1 && W == 1) {
         output_patch[0] = input_patch[0];
         output_patch[1] = input_patch[0];
@@ -94,7 +94,7 @@ __device__ void wNorm2WinoCalculation2D(T *input_patch, T* output_patch, int H, 
 }
 
 template <typename T>
-__device__ void inputNorm2WinoCalculation2D(T *input_patch, T *output_patch, int H, int W) {
+__device__ __forceinline__  void inputNorm2WinoCalculation2D(T *input_patch, T *output_patch, int H, int W) {
     if(H == 1 && W == 1) {
         output_patch[0] = input_patch[0];
         output_patch[1] = input_patch[1];
@@ -189,7 +189,7 @@ __device__ void inputNorm2WinoCalculation2D(T *input_patch, T *output_patch, int
 }
 
 template <typename T>
-__device__ void outputWino2NormCalculation2D(const T *input_patch, T *output_patch, int H, int W) {
+__device__ __forceinline__  void outputWino2NormCalculation2D(const T *input_patch, T *output_patch, int H, int W) {
     if(H == 1 && W == 1) {
     output_patch[0] = input_patch[0];
     output_patch[1] = input_patch[1];
