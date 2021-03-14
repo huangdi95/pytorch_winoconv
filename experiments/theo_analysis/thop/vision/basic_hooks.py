@@ -412,4 +412,8 @@ def wino_count(total_ops, size, stride):
         elif list(size) == [5, 7, 7] and list(stride) == [1, 2, 2]:
             total_ops /= 2.8
 
+
+        else:
+            print('Error! Unknown kernel size & stride:', list(size), list(stride))
+
     return total_ops
