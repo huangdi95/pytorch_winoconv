@@ -162,6 +162,8 @@ def wino_count(total_ops, size, stride):
     if Wino:
         if list(size) == [3, 3, 3] and list(stride) == [1, 1, 1]:
             total_ops /= 3.38
+        elif list(size) == [2, 2, 2] and list(stride) == [1, 1, 1]:
+            total_ops /= 2.37 
         elif list(size) == [1, 3, 3] and list(stride) == [1, 1, 1]:
             total_ops /= 2.25
         elif list(size) == [3, 1, 3] and list(stride) == [1, 1, 1]:
@@ -412,6 +414,29 @@ def wino_count(total_ops, size, stride):
         elif list(size) == [5, 7, 7] and list(stride) == [1, 2, 2]:
             total_ops /= 2.8
 
+
+        elif list(size) == [1, 1, 1] and list(stride) == [1, 1, 1]:
+            total_ops /= 1.
+        elif list(size) == [1, 1] and list(stride) == [1, 1]:
+            total_ops /= 1.
+
+################## gdconvnet ###################
+        elif list(size) == [3, 3, 3] and list(stride) == [1, 2, 2]:
+            total_ops /= 2.16
+        elif list(size) == [2, 2, 2] and list(stride) == [1, 1, 1]:
+            total_ops /= 2.37
+        
+        elif list(size) == [5, 1, 1] and list(stride) == [8, 1, 1]:
+            total_ops /= 1.
+        elif list(size) == [1, 1, 1] and list(stride) == [1, 2, 2]:
+            total_ops /= 1.
+        elif list(size) == [2, 2, 2] and list(stride) == [2, 2, 2]:
+            total_ops /= 1.
+        elif list(size) == [5, 5] and list(stride) == [5, 5]:
+            total_ops /= 1.
+        elif list(size) == [4, 4] and list(stride) == [2, 2]:
+            total_ops /= 1.
+################################################
 
         else:
             print('Error! Unknown kernel size & stride:', list(size), list(stride))
