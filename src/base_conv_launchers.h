@@ -31,6 +31,14 @@ void convLauncherStrideOneLarge2D(const T *input, const T *weight,
                               int kernel_H, int kernel_W, int pad_h, int pad_w,
                               T *output,
                               int num_split, int *H_start_gpu, int *H_end_gpu, int *W_start_gpu, int *W_end_gpu, float *tmp_out_buffer);
+template <typename T>
+void convLauncherStrideOneLarge2D2(const T *input, const T *weight,
+                              T *tmp_input_buffer, T *tmp_weight_buffer,
+                              T *tmp_product_buffer, const int64_t *tmp_ptr_buffer,
+                              int B, int H, int W, int C, int K,
+                              int kernel_H, int kernel_W, int pad_h, int pad_w,
+                              T *output,
+                              int num_split, int *H_start_gpu, int *H_end_gpu, int *W_start_gpu, int *W_end_gpu, float *tmp_out_buffer);
 
 static void tensorCopy(int *D_s, int *H_s, int *W_s, int *D_e, int *H_e, int *W_e, int *num_split, int **D_start, int **D_end, int **H_start, int **H_end, int **W_start, int **W_end) {
     *D_start = new int[*num_split];

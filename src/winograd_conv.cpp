@@ -202,7 +202,7 @@ void DWM2D(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
 //    std::cout << ms_double.count() << " ms" << endl;
 
     if(kernel_H <= 10 and kernel_W <= 10) {
-      convLauncherStrideOneLarge2D(Input.data<T>(), Weight.data<T>(),
+      convLauncherStrideOneLarge2D2(Input.data<T>(), Weight.data<T>(),
                                tmp_input_buffer.data<T>(), tmp_weight_buffer.data<T>(),
                                tmp_product_buffer.data<T>(), tmp_ptr_buffer.data<int64_t>(),
                                B, H, W, C, K, kernel_H, kernel_W, pad_h, pad_w,
