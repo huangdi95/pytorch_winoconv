@@ -22,10 +22,10 @@ if torch.cuda.is_available():
 
 
 size_dict = {
-    'vox2vox': (1, 3, 16, 112, 112),
-    'voxnet': (1, 1, 32, 32, 32),
+    'vox2vox': (1, 3, 16, 112, 112), # deconv
+    'voxnet': (1, 1, 32, 32, 32),    # 5x5x5 stride 2
     'shapenet': (1, 1, 30, 30, 30),
-    'vnet': (1, 1, 64, 128, 128),
+    'vnet': (1, 1, 64, 128, 128),    # illegal 
     'spynet': (1, 3, 448, 1024),
     'inpaintingnet': (1, 4, 32, 128, 128),
     'toflow_denoise': (1, 7, 3, 256, 448),
@@ -36,9 +36,9 @@ size_dict = {
     'slowfast_resnet152': (1, 3, 64, 224, 224),
     'slowfast_resnet200': (1, 3, 64, 224, 224),
     'completionnet': (1, 32, 3, 128, 128),
-    'videoinpaintingmodel': (1, 32, 3, 128, 128),
+    'videoinpaintingmodel': (1, 32, 3, 128, 128), # 5x5
 }
-for name in model_names:
+for name in ['spynet']:
     if name == 'test': continue
     model = models.__dict__[name]().to(device)
     dsize = size_dict[name]
