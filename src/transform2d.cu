@@ -21,6 +21,11 @@
 template <typename T>
 __global__ void wNorm2WinoTransform2D(const T *norm_weight, T* wino_weight, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int H, int W, int C, int K)
 {
+//    kernel_stride += s;
+//    H_start += s;
+//    W_start += s;
+//    H_end += s;
+//    W_end += s;
 
     int by = blockIdx.y; // n
     int c = blockIdx.x; // c
@@ -55,7 +60,83 @@ __global__ void wNorm2WinoTransform2D(const T *norm_weight, T* wino_weight, cons
 // I = (Batch, D, H, W, C)
 // O = (64, Batch, nD, nH, nW, C)
 template <typename T>
-__global__ void inputNorm2WinoTransform2D2(const T *norm_input, T *wino_input, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int *time, int N) {
+__global__ void inputNorm2WinoTransform2D(const T *norm_input, T *wino_input, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w) {
+    int bz = blockIdx.z; //n
+    int by = blockIdx.y; //b
+    int bx = blockIdx.x; //h*w
+    int tx = threadIdx.x; //K
+//    if(by*bx+tx == 0)
+//    printf("inputNorm2WinoTransform called!!!!!!!!!!!!!!!!!\n");
+
+    int h = bx / nW; 
+    int w = bx % nW;
+
+//    clock_t time_[9];
+//    time_[0] = clock(); 
+
+    int splitxH = H_end[bz] - H_start[bz] + 1;
+    int splitxW = W_end[bz] - W_start[bz] + 1;
+
+//    time_[1] = clock(); 
+
+    int f_b = by;
+    int xBase = 2 * w - pad_w;
+    int yBase = 2 * h - pad_h;
+
+//    time_[2] = clock(); 
+
+    T input_patch[16] = {T(0)};
+//    T *input_patch = new T[splitxD*splitxH*splitxW];
+//    time_[3] = clock(); 
+
+
+    int f_x, f_y;
+      for(int j = 0; j < splitxH; j++) {
+        for(int k = 0; k < splitxW; k++) {
+          f_y = yBase + j + H_start[bz];
+          f_x = xBase + k + W_start[bz];
+          if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+            input_patch[j * splitxW + k] = norm_input[((f_b * H + f_y) * W + f_x) * C + tx];
+          } else {
+            input_patch[j * splitxW + k] = T(0);
+          }
+        }
+      }
+//    time_[4] = clock(); 
+
+//    T *trans_input_patch = new T[splitxD*splitxH*splitxW];
+    T trans_input_patch[16] = {T(0)};
+
+//    time_[5] = clock(); 
+//////// TODO: transformation functions here /////////////
+//
+//  __device__ function();
+    inputNorm2WinoCalculation2D(input_patch, trans_input_patch, splitxH - 1, splitxW - 1);
+//
+//////////////////////////////////////////////////////////
+//    time_[6] = clock(); 
+
+    int offset = ((f_b * nH + h) * nW + w) * C + tx;
+    int stride = B * nH * nW * C;
+
+//    time_[7] = clock(); 
+    for(int i = 0; i < splitxH*splitxW; i++) {
+      wino_input[(i + kernel_stride[bz]) * stride + offset] = T(trans_input_patch[i]);
+    }
+//    time_[8] = clock(); 
+//    for(int i = 0; i < 9 - 1; i++) {
+//        time[i] = (int)(time_[i+1] - time_[i]);
+//        time[i] = (int)(20);
+//    }
+}
+
+template <typename T>
+__global__ void inputNorm2WinoTransform2D2(const T *norm_input, T *wino_input, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int N) {
+//    kernel_stride += s;
+//    H_start += s;
+//    W_start += s;
+//    H_end += s;
+//    W_end += s;
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < N) {
     int bz = tid / (C * nH * nW * B); //n
@@ -68,14 +149,14 @@ __global__ void inputNorm2WinoTransform2D2(const T *norm_input, T *wino_input, c
     int h = bx / nW; 
     int w = bx % nW;
 
-    clock_t time_[9];
-    time_[0] = clock(); 
+//    clock_t time_[9];
+//    time_[0] = clock(); 
 
     int h_end = H_end[bz];
     int h_start = H_start[bz];
     int w_end = W_end[bz];
     int w_start = W_start[bz];
-    time_[1] = clock(); 
+//    time_[1] = clock(); 
 
     int splitxH = h_end - h_start + 1;
     int splitxW = w_end - w_start + 1;
@@ -87,11 +168,11 @@ __global__ void inputNorm2WinoTransform2D2(const T *norm_input, T *wino_input, c
     int xBase = 2 * w - pad_w;
     int yBase = 2 * h - pad_h;
 
-    time_[2] = clock(); 
+//    time_[2] = clock(); 
 
-    T input_patch[16] = {T(0)};
+    T input_patch[16];
 //    T *input_patch = new T[splitxD*splitxH*splitxW];
-    time_[3] = clock(); 
+//    time_[3] = clock(); 
 
 
     int f_x, f_y;
@@ -108,104 +189,33 @@ __global__ void inputNorm2WinoTransform2D2(const T *norm_input, T *wino_input, c
           }
         }
       }
-    time_[4] = clock(); 
+//    time_[4] = clock(); 
 
 ////    T *trans_input_patch = new T[splitxD*splitxH*splitxW];
-    T trans_input_patch[16] = {T(0)};
+    T trans_input_patch[16];
 
-    time_[5] = clock(); 
+//    time_[5] = clock(); 
 //////// TODO: transformation functions here /////////////
 //
 //  __device__ function();
     inputNorm2WinoCalculation2D(input_patch, trans_input_patch, splitxH - 1, splitxW - 1);
 //
 //////////////////////////////////////////////////////////
-    time_[6] = clock(); 
+//    time_[6] = clock(); 
 
     int offset = ((f_b * nH + h) * nW + w) * C + tx;
     int stride = B * nH * nW * C;
 //
-    time_[7] = clock(); 
+//    time_[7] = clock(); 
     for(int i = 0; i < splitxH*splitxW; i++) {
       wino_input[(i + kernel_stride[bz]) * stride + offset] = T(trans_input_patch[i]);
     }
-    time_[8] = clock(); 
-    if (tid == 0) {
-    for(int i = 0; i < 9 - 1; i++) {
-        time[i] = (int)(time_[i+1] - time_[i]);
-//        time[i] = (int)(20);
-    }
-    }
-    }
-}
-template <typename T>
-__global__ void inputNorm2WinoTransform2D(const T *norm_input, T *wino_input, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int *time) {
-    int bz = blockIdx.z; //n
-    int by = blockIdx.y; //b
-    int bx = blockIdx.x; //h*w
-    int tx = threadIdx.x; //K
-//    if(by*bx+tx == 0)
-//    printf("inputNorm2WinoTransform called!!!!!!!!!!!!!!!!!\n");
-
-    int h = bx / nW; 
-    int w = bx % nW;
-
-    clock_t time_[9];
-    time_[0] = clock(); 
-
-    int splitxH = H_end[bz] - H_start[bz] + 1;
-    int splitxW = W_end[bz] - W_start[bz] + 1;
-
-    time_[1] = clock(); 
-
-    int f_b = by;
-    int xBase = 2 * w - pad_w;
-    int yBase = 2 * h - pad_h;
-
-    time_[2] = clock(); 
-
-    T input_patch[16] = {T(0)};
-//    T *input_patch = new T[splitxD*splitxH*splitxW];
-    time_[3] = clock(); 
-
-
-    int f_x, f_y;
-      for(int j = 0; j < splitxH; j++) {
-        for(int k = 0; k < splitxW; k++) {
-          f_y = yBase + j + H_start[bz];
-          f_x = xBase + k + W_start[bz];
-          if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-            input_patch[j * splitxW + k] = norm_input[((f_b * H + f_y) * W + f_x) * C + tx];
-          } else {
-            input_patch[j * splitxW + k] = T(0);
-          }
-        }
-      }
-    time_[4] = clock(); 
-
-//    T *trans_input_patch = new T[splitxD*splitxH*splitxW];
-    T trans_input_patch[16] = {T(0)};
-
-    time_[5] = clock(); 
-//////// TODO: transformation functions here /////////////
-//
-//  __device__ function();
-    inputNorm2WinoCalculation2D(input_patch, trans_input_patch, splitxH - 1, splitxW - 1);
-//
-//////////////////////////////////////////////////////////
-    time_[6] = clock(); 
-
-    int offset = ((f_b * nH + h) * nW + w) * C + tx;
-    int stride = B * nH * nW * C;
-
-    time_[7] = clock(); 
-    for(int i = 0; i < splitxH*splitxW; i++) {
-      wino_input[(i + kernel_stride[bz]) * stride + offset] = T(trans_input_patch[i]);
-    }
-    time_[8] = clock(); 
-    for(int i = 0; i < 9 - 1; i++) {
-        time[i] = (int)(time_[i+1] - time_[i]);
-//        time[i] = (int)(20);
+//    time_[8] = clock(); 
+//    if (tid == 0) {
+//    for(int i = 0; i < 9 - 1; i++) {
+//        time[i] = (int)(time_[i+1] - time_[i]);
+//    }
+//    }
     }
 }
 
@@ -214,28 +224,67 @@ __global__ void inputNorm2WinoTransform2D(const T *norm_input, T *wino_input, co
 //wino_output = (64, Batch, nD, nH, nW, K)
 //tmp_output = (Batch, D, H, W, K)
 template <typename T>
-__global__ void outputWino2NormTransform2D(const T *wino_output, T *tmp_output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int B, int output_H, int output_W, int K) {
-    int bz = blockIdx.z; //n
-    int by = blockIdx.y; //b
-    int bx = blockIdx.x; //h*w
-    int tx = threadIdx.x; //K
+__global__ void outputWino2NormTransform2D(const T *wino_output, T *tmp_output, const int *kernel_stride,  const int *H_start, const int *H_end, const int *W_start, const int *W_end, int B, int output_H, int output_W, int K, int N) {
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//    clock_t time_[9];
+    if (tid < N) {
+//    time_[0] = clock(); 
     int nH, nW;
     nH = (output_H + 1) / 2;
     nW = (output_W + 1) / 2;
+//    tmp_output += s * B * output_H * output_W * K;
+//    kernel_stride += s;
+///    H_start += s;
+//    W_start += s;
+//    H_end += s;
+//    W_end += s;
+//    int bz = blockIdx.z; //n
+//    int by = blockIdx.y; //b
+//    int bx = blockIdx.x; //h*w
+//    int tx = threadIdx.x; //K
+    int bz = tid / (K * nH * nW * B); //n
+    int by = (tid % (K * nH * nW * B)) / (K * nH * nW); //b
+    int bx = (tid % (K * nH * nW * B) % (K * nH * nW)) / K; //h*w
+    int tx = tid % (K * nH * nW * B) % (K * nH * nW) % K; //K
 
     int h = bx / nW; 
     int w = bx % nW;
 
+//    time_[1] = clock(); 
+
     int splitxH = H_end[bz] - H_start[bz] + 1;
     int splitxW = W_end[bz] - W_start[bz] + 1;
 
-    T product_patch[16] = {T(0)};
+//    time_[2] = clock();
 
-    for(int i = 0; i < splitxH*splitxW; i++) {
-      product_patch[i] = wino_output[((((i + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    }
+    T product_patch[16] = {0};
 
-    T output_patch[4] = {T(0)};
+//    time_[3] = clock();
+
+    product_patch[0] = wino_output[((((0 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[1] = wino_output[((((1 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[2] = wino_output[((((2 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[3] = wino_output[((((3 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[4] = wino_output[((((4 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[6] = wino_output[((((6 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[7] = wino_output[((((7 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[8] = wino_output[((((8 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[9] = wino_output[((((9 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[10] = wino_output[((((10 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[11] = wino_output[((((11 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[12] = wino_output[((((12 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[13] = wino_output[((((13 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[14] = wino_output[((((14 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    product_patch[15] = wino_output[((((15 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+//    for(int i = 0; i < splitxH*splitxW; i++) {
+//      product_patch[i] = wino_output[((((i + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+//    }
+
+//    time_[4] = clock(); 
+
+    T output_patch[4] = {0};
+
+//    time_[5] = clock(); 
 
 //////// TODO: transformation functions here /////////////
 //
@@ -244,6 +293,8 @@ __global__ void outputWino2NormTransform2D(const T *wino_output, T *tmp_output, 
 //
 //////////////////////////////////////////////////////////
 
+//    time_[6] = clock();
+
     tmp_output[(((bz * B + by) * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * K + tx] = output_patch[0];
     if(output_W % 2 == 0 || w != nW - 1)
       tmp_output[(((bz * B + by) * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * K + tx] = output_patch[1];
@@ -251,6 +302,16 @@ __global__ void outputWino2NormTransform2D(const T *wino_output, T *tmp_output, 
       tmp_output[(((bz * B + by) * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * K + tx] = output_patch[2];
     if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
       tmp_output[(((bz * B + by) * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * K + tx] = output_patch[3];
+    }
+//    time_[7] = clock();
+//    if (tid == 0) {
+//    for(int i = 0; i < 7; i++) {
+//        time[i] = (int)(time_[i+1] - time_[i]);
+//    }
+//    for(int i = 7; i < 9; i++) {
+//        time[i] = 0; 
+//    }
+//    }
 }
 
 // dim3 threadsPerBlock(C, nH, 1)
@@ -258,12 +319,17 @@ __global__ void outputWino2NormTransform2D(const T *wino_output, T *tmp_output, 
 //tmp_output = (64, Batch, nD, nH, nW, K)
 //norm_output = (Batch, D, H, W, K)
 template <typename T>
-__global__ void outputAggregate2D(T *tmp_output, T *norm_output, int numSplit, int B, int output_H, int output_W, int K) {
-    int by = blockIdx.y; //b
-    int bx = blockIdx.x; //h*w
-    int tx = threadIdx.x; //K
+__global__ void outputAggregate2D(T *tmp_output, T *norm_output, int numSplit, int B, int output_H, int output_W, int K, int N) {
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < N) {
+//    int by = blockIdx.y; //b
+//    int bx = blockIdx.x; //h*w
+//    int tx = threadIdx.x; //K
 //    if(by*bx+tx == 0)
 //    printf("outputAggregate called!!!!!!!!!!!!!!!!!\n");
+    int by = tid / (K * output_H * output_W); //n
+    int bx = (tid % (K * output_H * output_W)) / K; //h*w
+    int tx = tid % (K * output_H * output_W) % K; //K
 
     int h = bx / output_W;
     int w = bx % output_W;
@@ -275,4 +341,5 @@ __global__ void outputAggregate2D(T *tmp_output, T *norm_output, int numSplit, i
     }
 
     norm_output[((by * output_H + h) * output_W + w) * K + tx] = result;
+    }
 }
