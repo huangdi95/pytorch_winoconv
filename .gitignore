@@ -1,4 +1,11 @@
 # added by hd
+*.ii
+*.fatbin*
+*.moduleid
+*.o
+*.ptx
+*.cubin
+*.cudafe1*
 *.csv
 *.err
 *.whl
