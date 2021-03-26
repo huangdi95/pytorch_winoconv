@@ -1,0 +1,72 @@
+/*************************************************************************
+    > Author: Huang Di
+    > Mail: hd232508@163.com 
+    > Created Time: Fri 26 Mar 2021 03:20:57 PM CST
+ ************************************************************************/
+
+//              accu[k][0 ] += ip[0 ] * wv;
+//              accu[k][1 ] += ip[1 ] * wv;
+//              accu[k][2 ] += ip[2 ] * wv;
+//              accu[k][3 ] += ip[3 ] * wv;
+//              accu[k][4 ] += ip[4 ] * wv;
+//              accu[k][5 ] += ip[5 ] * wv;
+//              accu[k][6 ] += ip[6 ] * wv;
+//              accu[k][7 ] += ip[7 ] * wv;
+//              accu[k][8 ] += ip[8 ] * wv;
+//              accu[k][9 ] += ip[9 ] * wv;
+//              accu[k][10] += ip[10] * wv;
+//              accu[k][11] += ip[11] * wv;
+//              accu[k][12] += ip[12] * wv;
+//              accu[k][13] += ip[13] * wv;
+//              accu[k][14] += ip[14] * wv;
+//              accu[k][15] += ip[15] * wv;
+//              accu[k][16] += ip[16] * wv;
+//              accu[k][17] += ip[17] * wv;
+//              accu[k][18] += ip[18] * wv;
+//              accu[k][19] += ip[19] * wv;
+//              accu[k][20] += ip[20] * wv;
+//              accu[k][21] += ip[21] * wv;
+//              accu[k][22] += ip[22] * wv;
+//              accu[k][23] += ip[23] * wv;
+//              accu[k][24] += ip[24] * wv;
+//              accu[k][25] += ip[25] * wv;
+//              accu[k][26] += ip[26] * wv;
+//              accu[k][27] += ip[27] * wv;
+//              accu[k][28] += ip[28] * wv;
+//              accu[k][29] += ip[29] * wv;
+//              accu[k][30] += ip[30] * wv;
+//              accu[k][31] += ip[31] * wv;
+//              wp += 32; 
+//              wv = wp[0];
+//              accu[k][32] += ip[0 ] * wv;
+//              accu[k][33] += ip[1 ] * wv;
+//              accu[k][34] += ip[2 ] * wv;
+//              accu[k][35] += ip[3 ] * wv;
+//              accu[k][36] += ip[4 ] * wv;
+//              accu[k][37] += ip[5 ] * wv;
+//              accu[k][38] += ip[6 ] * wv;
+//              accu[k][39] += ip[7 ] * wv;
+//              accu[k][40] += ip[8 ] * wv;
+//              accu[k][41] += ip[9 ] * wv;
+//              accu[k][42] += ip[10] * wv;
+//              accu[k][43] += ip[11] * wv;
+//              accu[k][44] += ip[12] * wv;
+//              accu[k][45] += ip[13] * wv;
+//              accu[k][46] += ip[14] * wv;
+//              accu[k][47] += ip[15] * wv;
+//              accu[k][48] += ip[16] * wv;
+//              accu[k][49] += ip[17] * wv;
+//              accu[k][50] += ip[18] * wv;
+//              accu[k][51] += ip[19] * wv;
+//              accu[k][52] += ip[20] * wv;
+//              accu[k][53] += ip[21] * wv;
+//              accu[k][54] += ip[22] * wv;
+//              accu[k][55] += ip[23] * wv;
+//              accu[k][56] += ip[24] * wv;
+//              accu[k][57] += ip[25] * wv;
+//              accu[k][58] += ip[26] * wv;
+//              accu[k][59] += ip[27] * wv;
+//              accu[k][60] += ip[28] * wv;
+//              accu[k][61] += ip[29] * wv;
+//              accu[k][62] += ip[30] * wv;
+//              accu[k][63] += ip[31] * wv;
