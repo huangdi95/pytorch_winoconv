@@ -1,4 +1,5 @@
 # added by hd
+*.reg.c
 *.ii
 *.fatbin*
 *.moduleid
