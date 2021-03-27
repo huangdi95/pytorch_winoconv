@@ -109,11 +109,9 @@ __device__ void inputNorm2WinoTransform2D(const float *norm_input, float input_s
           f_x = xBase + k + w_start;
           if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
             input_patch[j * splitxW + k] = norm_input[((((warp_id + c_i) * H + f_y) * W + f_x)) * B + lane_id];
-            //TODO: NO Batch supported; threadIdx.x/32
           } else {
             input_patch[j * splitxW + k] = float(0);
           }
-//          input_patch[j * splitxW + k] = float(0);
         }
       }
 
@@ -181,7 +179,6 @@ int main() {
     cudaMalloc((void**) &d_A, mem_size_A);
 
     // allocate device memory for result
-    cout << "Batch BN BC: " << Batch << " " << BN << " " << BC;
     unsigned int size_C = Batch * BN * BC;
     unsigned int mem_size_C = sizeof(float) * size_C;
     float* d_C;
