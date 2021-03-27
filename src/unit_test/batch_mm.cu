@@ -9,17 +9,18 @@
 using namespace std;
 #define CHECK_RESULT 0
 #define CUBLAS 1
-#define MY 1
+#define MY_bcbn 0
+#define MY_bnbc 1
+////////TODO: not correct yet
 #define Batch 16
-//#define BN 32
-//#define BC 8
-//#define BK 64
-//#define BN 32*32
-//#define BC 8*32
-//#define BK 64
-#define BN 114688
-#define BC 64
+
+#define BN 32
+#define BC 8
 #define BK 64
+
+//#define BN 114688
+//#define BC 64
+//#define BK 64
 
 void randomInit(float*, int);
 void printDiff(float*, float*, int, int);
@@ -39,7 +40,7 @@ computeGold(float* C, const float* A, const float* B, unsigned int hA, unsigned 
             }
 }
 template<unsigned int bn, unsigned int bc, unsigned int bk>
-__global__ void winograd2D(const float *input, const float *weight, float *output, int C, int N, int K)
+__global__ void winograd2D_bcbn(const float *input, const float *weight, float *output, int C, int N, int K)
 {
     int warp_id = threadIdx.x / 32;
     int lane_id = threadIdx.x % 32;
@@ -75,10 +76,64 @@ __global__ void winograd2D(const float *input, const float *weight, float *outpu
               wp += 32; 
               wv = wp[0];
               for(int l = 32; l < 64; l++) {
-                accu[k][l] += ip[l - 32] * wv;
+                accu[k][l] += ip[l-32] * wv;
               }
               wp += (K - 32); 
               ip += bn;
+          }
+          wp += (C - bc) * K;
+        }
+        __syncthreads();
+    }
+    unsigned int offset = by * bn * K + bx * bk;
+#pragma unroll
+    for (int i = 0; i < bn; i++) {
+        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[0][i];
+        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[0][i+32];
+        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[1][i];
+        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[1][i+32];
+    }
+}
+template<unsigned int bn, unsigned int bc, unsigned int bk>
+__global__ void winograd2D_bnbc(const float *input, const float *weight, float *output, int C, int N, int K)
+{
+    int warp_id = threadIdx.x / 32;
+    int lane_id = threadIdx.x % 32;
+    int bx = blockIdx.x % (K / bk);
+    int by = blockIdx.x / (K / bk);
+    float accu[Batch/8][64] = {0};
+    __shared__ float input_smem[Batch][bn][bc]; // TODO: 16 -> 100
+
+    for(int i = 0; i < C; i+=bc) {
+   
+        //////// input transform //////
+#pragma unroll
+        for (int j = 0; j < Batch; j++) {
+//            input_smem[j][threadIdx.x%bc][threadIdx.x/bc] = input[j * bc * bn + threadIdx.x];
+            input_smem[j][lane_id][warp_id] = input[j * C * N + by * C * bn + lane_id * C + warp_id + i];
+//            input_smem[j][warp_id][lane_id] = input[j * bc * bn + lane_id * bc + threadIdx.x];
+        }
+        //////////////////////////////
+        __syncthreads();
+    
+        ////////////// load register ////////////
+        float *ip = &input_smem[2*warp_id][0][0];
+        const float *wp = &weight[2*warp_id*C*K+lane_id+i*K+bx*bk];
+        /////// batched matmul 32x2x8 outer product//////////
+#pragma unroll
+        for(int k = 0; k < Batch/8; k++) {
+#pragma unroll
+          for(int j = 0; j < bc; j++) {
+              float wv = wp[0];
+              for(int l = 0; l < 32; l++) {
+                accu[k][l] += input_smem[2*warp_id][l][j] * wv;
+              }
+              wp += 32; 
+              wv = wp[0];
+              for(int l = 32; l < 64; l++) {
+                accu[k][l] += input_smem[2*warp_id][l-32][j] * wv;
+              }
+              wp += (K - 32); 
           }
           wp += (C - bc) * K;
         }
@@ -161,8 +216,8 @@ int main() {
     printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
 #endif
 
+#if MY_bcbn == 1
     cudaDeviceSynchronize();
-#if MY == 1
     /****************************************************/
     /*  My kernel                                       */
     /****************************************************/
@@ -177,13 +232,47 @@ int main() {
     cudaEventRecord(start, NULL); 
     // setup execution parameters
     // naive implementation
-    winograd2D<32, 8, 64><<<(BN/32)*(BK/64), 256>>>(d_A, d_B, d_C, BC, BN, BK);
+    winograd2D_bcbn<32, 8, 64><<<(BN/32)*(BK/64), 256>>>(d_A, d_B, d_C, BC, BN, BK);
     // stop and destroy timer
     cudaEventCreate(&stop);
     cudaEventRecord(stop, NULL);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&msecTotal, start, stop);
     printf("Loop unrolling GPU 2\n");
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
+    // copy result from device to host
+    cudaMemcpy(h_C, d_C, mem_size_C,
+                              cudaMemcpyDeviceToHost);
+    for(int i = 0; i < 10; i++) {
+        cout << h_C[i] << " "; 
+    }
+    cout << endl;
+    cudaDeviceSynchronize();
+#endif
+
+#if MY_bnbc == 1
+    cudaDeviceSynchronize();
+    /****************************************************/
+    /*  My kernel                                       */
+    /****************************************************/
+
+    // copy host memory to device
+    cudaMemcpy(d_A, h_A, mem_size_A,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, mem_size_B,
+                              cudaMemcpyHostToDevice);
+    // create and start timer
+    cudaEventCreate(&start);
+    cudaEventRecord(start, NULL); 
+    // setup execution parameters
+    // naive implementation
+    winograd2D_bnbc<32, 8, 64><<<(BN/32)*(BK/64), 256>>>(d_A, d_B, d_C, BC, BN, BK);
+    // stop and destroy timer
+    cudaEventCreate(&stop);
+    cudaEventRecord(stop, NULL);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
+    printf("Loop unrolling GPU \n");
     printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
     // copy result from device to host
     cudaMemcpy(h_C, d_C, mem_size_C,
@@ -247,7 +336,7 @@ int main() {
     free(reference);
 #endif
 #if CUBLAS == 1
-//    printDiff(cublas_ref, h_C, BK, BN);
+    printDiff(cublas_ref, h_C, BK, BN);
     free(cublas_ref);
 #endif
     free(h_A);
