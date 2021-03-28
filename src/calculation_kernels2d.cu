@@ -256,12 +256,12 @@ __device__ void outputWino2NormCalculation2D(const T *input_patch, T *output_pat
     output_patch[2] = -input_patch[10] - input_patch[12] - input_patch[13] - input_patch[14] + input_patch[4] + input_patch[5] + input_patch[6] - input_patch[8] - input_patch[9];
     output_patch[3] = input_patch[10] + input_patch[11] - input_patch[13] + input_patch[14] + input_patch[15] + input_patch[5] - input_patch[6] - input_patch[7] - input_patch[9];
     }
-     else {
-    output_patch[0] = input_patch[0] + input_patch[10] + input_patch[1] + input_patch[2] + input_patch[4] + input_patch[5] + input_patch[6] + input_patch[8] + input_patch[9];
-    output_patch[1] = -input_patch[10] - input_patch[11] + input_patch[1] - input_patch[2] - input_patch[3] + input_patch[5] - input_patch[6] - input_patch[7] + input_patch[9];
-    output_patch[2] = -input_patch[10] - input_patch[12] - input_patch[13] - input_patch[14] + input_patch[4] + input_patch[5] + input_patch[6] - input_patch[8] - input_patch[9];
-    output_patch[3] = input_patch[10] + input_patch[11] - input_patch[13] + input_patch[14] + input_patch[15] + input_patch[5] - input_patch[6] - input_patch[7] - input_patch[9];
-    }
+//     else {
+//    output_patch[0] = input_patch[0] + input_patch[10] + input_patch[1] + input_patch[2] + input_patch[4] + input_patch[5] + input_patch[6] + input_patch[8] + input_patch[9];
+//    output_patch[1] = -input_patch[10] - input_patch[11] + input_patch[1] - input_patch[2] - input_patch[3] + input_patch[5] - input_patch[6] - input_patch[7] + input_patch[9];
+//    output_patch[2] = -input_patch[10] - input_patch[12] - input_patch[13] - input_patch[14] + input_patch[4] + input_patch[5] + input_patch[6] - input_patch[8] - input_patch[9];
+//    output_patch[3] = input_patch[10] + input_patch[11] - input_patch[13] + input_patch[14] + input_patch[15] + input_patch[5] - input_patch[6] - input_patch[7] - input_patch[9];
+//    }
 
 }
 
