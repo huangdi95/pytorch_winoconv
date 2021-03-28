@@ -16,11 +16,9 @@ using namespace std;
 //#define BN 32*32
 //#define BC 8*32
 #define Bi 32    //input batch
-//#define Hi 448  //input h
-//#define Wi 1024 //input w
 #define Hi 224  //input h
 #define Wi 512 //input w
-#define BC 8 //input c
+#define BC 8*2 //input c
 #define BK 64   //output c
 #define PH 2    //pad h
 #define PW 2    //pad w
@@ -36,33 +34,21 @@ __global__ void outputWino2NormTransform2D_base(const T *wino_output, T *tmp_out
    nH = (output_H + 1) / 2;
    nW = (output_W + 1) / 2;
    int bz = tid / (K * nH * nW * B); //n
-   int by = (tid % (K * nH * nW * B)) / (K * nH * nW); //b
-   int bx = (tid % (K * nH * nW * B) % (K * nH * nW)) / K; //h*w
-   int tx = tid % (K * nH * nW * B) % (K * nH * nW) % K; //K
+   int by = (tid % (K * nH * nW * B)) / (K * B); //h*w
+   int bx = (tid % (K * nH * nW * B) % (K * B)) / K; //b
+   int tx = tid % (K * nH * nW * B) % (K * B) % K; //K
 
-   int h = bx / nW; 
-   int w = bx % nW;
+   int h = by / nW; 
+   int w = by % nW;
 
    int splitxH = H_end[bz] - H_start[bz] + 1;
    int splitxW = W_end[bz] - W_start[bz] + 1;
 
     T product_patch[16] = {0};
 
-    product_patch[0] = wino_output[((((0 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[1] = wino_output[((((1 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[2] = wino_output[((((2 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[3] = wino_output[((((3 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[4] = wino_output[((((4 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[6] = wino_output[((((6 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[7] = wino_output[((((7 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[8] = wino_output[((((8 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[9] = wino_output[((((9 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[10] = wino_output[((((10 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[11] = wino_output[((((11 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[12] = wino_output[((((12 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[13] = wino_output[((((13 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[14] = wino_output[((((14 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
-    product_patch[15] = wino_output[((((15 + kernel_stride[bz]) * B + by) * nH + h) * nW + w) * K + tx];
+    for(int i = 0; i < splitxH*splitxW; i++) {
+      product_patch[i] = wino_output[((((i + kernel_stride[bz]) * nH + h) * nW + w) * B + bx) * K + tx];
+    }
 
     T output_patch[4] = {0};
 
@@ -74,13 +60,13 @@ __global__ void outputWino2NormTransform2D_base(const T *wino_output, T *tmp_out
 //////////////////////////////////////////////////////////
 
 
-    tmp_output[(((bz * B + by) * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * K + tx] = output_patch[0];
+    tmp_output[(((bz * K + tx) * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + bx] = output_patch[0];
     if(output_W % 2 == 0 || w != nW - 1)
-      tmp_output[(((bz * B + by) * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * K + tx] = output_patch[1];
+      tmp_output[(((bz * K + tx) * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + bx] = output_patch[1];
     if(output_H % 2 == 0 || h != nH - 1)
-      tmp_output[(((bz * B + by) * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * K + tx] = output_patch[2];
+      tmp_output[(((bz * K + tx) * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + bx] = output_patch[2];
     if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
-      tmp_output[(((bz * B + by) * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * K + tx] = output_patch[3];
+      tmp_output[(((bz * K + tx) * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + bx] = output_patch[3];
     }
 }
 
@@ -92,26 +78,26 @@ __device__ void outputWino2NormTransform2D(float *output_smem, float *output, co
     int splitxH = H_end[bz] - H_start[bz] + 1;
     int splitxW = W_end[bz] - W_start[bz] + 1;
 
-    float product_patch[16] = {0};
+    for (int j = 0; j < bk/2; j += bk/8) {
 
-    for (int i = 0; i < splitxH*splitxW; i++) {
-        for (int j = 0; j < 32; j += 8) {
+        float product_patch[16] = {0};
+        for (int i = 0; i < splitxH*splitxW; i++) {
             product_patch[i] = output_smem[(i * bn + lane_id) * (bk/2 + 1) + warp_id + j];
-    
-            float output_patch[4] = {0};
-
-            outputWino2NormCalculation2D(product_patch, output_patch, splitxH - 1, splitxW - 1);
-
-            unsigned int offset_k = bx * bk + k_i + warp_id + j;
-
-            output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + lane_id] = output_patch[0];
-            if(output_W % 2 == 0 || w != nW - 1)
-              output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + lane_id] = output_patch[1];
-            if(output_H % 2 == 0 || h != nH - 1)
-              output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + lane_id] = output_patch[2];
-            if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
-              output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + lane_id] = output_patch[3];
         }
+    
+        float output_patch[4] = {0};
+
+        outputWino2NormCalculation2D(product_patch, output_patch, splitxH - 1, splitxW - 1);
+
+        unsigned int offset_k = bx * bk + k_i + warp_id + j;
+
+        output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + lane_id] = output_patch[0];
+        if(output_W % 2 == 0 || w != nW - 1)
+          output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + lane_id] = output_patch[1];
+        if(output_H % 2 == 0 || h != nH - 1)
+          output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + lane_id] = output_patch[2];
+        if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
+          output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + lane_id] = output_patch[3];
     }
 }
 
@@ -122,8 +108,8 @@ __global__ void winograd2D(const float *wino_output, float *output, const int *k
     int lane_id = threadIdx.x % 32;
     int bx = blockIdx.x % (K / bk);
     int by = blockIdx.x / (K / bk);  //TODO: slow???
-    int tid = by * blockDim.x + threadIdx.x;
-    int bz = tid / (B* nH * nW * C);
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int bz = tid / (B* nH * nW * K);
     float accu[Batch/8][64] = {0};
 
 //    __shared__ float output_smem[16 * bn * (bk/2 + 1)]; // [16, bn, bk/2+1] with 1 conflict padding
@@ -140,6 +126,7 @@ __global__ void winograd2D(const float *wino_output, float *output, const int *k
         __syncthreads();
         //////// input transform //////
         outputWino2NormTransform2D<bn, bc, bk>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, bz, warp_id, lane_id, i);
+        __syncthreads();
         //////////////////////////////
     }
 }
@@ -230,7 +217,7 @@ int main() {
     // naive implementation
     int maxbytes = 67584; // 96 KB
     cudaFuncSetAttribute(winograd2D<32, 8, 64>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
-    winograd2D<32, 8, 64><<<(BN/32)*(BK/64), 256, 67584>>>(d_A, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Ho, Wo, BC, BK, PH, PW);
+    winograd2D<32, 8, 64><<<(BN/32)*(BK/64), 256, maxbytes>>>(d_A, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Ho, Wo, BC, BK, PH, PW);
     // stop and destroy timer
     cudaEventCreate(&stop);
     cudaEventRecord(stop, NULL);
@@ -280,7 +267,7 @@ int main() {
 
     // check result
 #if CHECK_RESULT == 1
-    printDiff(ref, h_C, Batch, NH, NW, BC);
+    printDiff(ref, h_C, Bi, Ho, Wo, BK);
     free(ref);
 #endif
     free(h_A);
