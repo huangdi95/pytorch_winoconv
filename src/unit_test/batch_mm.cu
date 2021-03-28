@@ -87,6 +87,7 @@ __global__ void winograd2D_bcbn(const float *input, const float *weight, float *
     }
     unsigned int offset = by * bn * K + bx * bk;
 #pragma unroll
+    //TODO: need smem padding when composed
     for (int i = 0; i < bn; i++) {
         output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[0][i];
         output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[0][i+32];
