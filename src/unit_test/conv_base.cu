@@ -62,6 +62,58 @@
 using namespace std;
 
 template <typename T>
+__global__ void inputNorm2WinoTransform2D_permute(const T *norm_input, T *wino_input, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int N) {
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < N) {
+    int bz = tid / (C * nH * nW * B); //n
+    int by = (tid % (C * nH * nW * B)) / (B * nH * nW); //c
+    int bx = (tid % (C * nH * nW * B) % (B * nH * nW)) / B; //h*w
+    int tx = tid % (C * nH * nW * B) % (B * nH * nW) % B; //b
+
+    int h = bx / nW; 
+    int w = bx % nW;
+
+    int h_end = H_end[bz];
+    int h_start = H_start[bz];
+    int w_end = W_end[bz];
+    int w_start = W_start[bz];
+
+    int splitxH = h_end - h_start + 1;
+    int splitxW = w_end - w_start + 1;
+
+    int f_c = by;
+    int xBase = 2 * w - pad_w;
+    int yBase = 2 * h - pad_h;
+
+    T input_patch[16];
+
+    int f_x, f_y;
+      for(int j = 0; j < splitxH; j++) {
+        for(int k = 0; k < splitxW; k++) {
+          f_y = yBase + j + h_start;
+          f_x = xBase + k + w_start;
+          if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+            input_patch[j * splitxW + k] = norm_input[((f_c * H + f_y) * W + f_x) * B + tx];
+          } else {
+            input_patch[j * splitxW + k] = T(0);
+          }
+        }
+      }
+
+    T trans_input_patch[16];
+
+    inputNorm2WinoCalculation2D(input_patch, trans_input_patch, splitxH - 1, splitxW - 1);
+
+    int offset = ((tx * nH + h) * nW + w) * C + f_c;
+    int stride = B * nH * nW * C;
+
+    for(int i = 0; i < splitxH*splitxW; i++) {
+      wino_input[(i + kernel_stride[bz]) * stride + offset] = T(trans_input_patch[i]);
+    }
+    }
+}
+
+template <typename T>
 __global__ void outputWino2NormTransform2D_permute(const T *wino_output, T *tmp_output, const int *kernel_stride,  const int *H_start, const int *H_end, const int *W_start, const int *W_end, int B, int output_H, int output_W, int K, int N) {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid < N) {
@@ -137,7 +189,7 @@ void convLauncherStrideOneLarge2D_base<float>(const float *input, const float *w
     N = C * nH * nW * B * num_split;
     cout << "N: " << N << endl;
     cout << "kernel_size: " << kernel_size << endl;
-    inputNorm2WinoTransform2D2 <float> <<<(N - 1 + 512) / 512, 512>>> (input, tmp_input_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, nH, nW, B, H, W, C, pad_h, pad_w, N);
+    inputNorm2WinoTransform2D_permute <float> <<<(N - 1 + 512) / 512, 512>>> (input, tmp_input_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, nH, nW, B, H, W, C, pad_h, pad_w, N);
 
     dim3 bDim2(K, 1, 1);
     dim3 gDim2(C, num_split, 1);
