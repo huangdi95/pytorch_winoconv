@@ -112,10 +112,11 @@ int main() {
     unsigned int size_A = Bi * Hi * Wi * BC;
     unsigned int mem_size_A = sizeof(float) * size_A;
     float* h_A = (float*) malloc(mem_size_A);
-
     unsigned int size_B = 3 * 3 * BC * BK;
     unsigned int mem_size_B = sizeof(float) * size_B;
     float* h_B = (float*) malloc(mem_size_B);
+    float flop = 2 * (float)Bi * (float)NH * (float)NW *(float)BC * (float)BK * Batch;
+    printf("wino flop: %f\n", flop);
     // initialize host memory
     randomInit(h_A, size_A);
     randomInit(h_B, size_B);
@@ -200,7 +201,7 @@ int main() {
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&msecTotal, start, stop);
     printf("My\n");
-    printf("Processing time: %f (ms) \n", msecTotal);
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
     // copy result from device to host
     cudaMemcpy(h_C, d_C, mem_size_C,
                               cudaMemcpyDeviceToHost);
@@ -245,7 +246,7 @@ int main() {
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&msecTotal, start, stop);
     printf("Baseline\n");
-    printf("Processing time: %f (ms) \n", msecTotal);
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
     float* ref = (float*) malloc(mem_size_C);
     cudaMemcpy(ref, d_C, mem_size_C,
                               cudaMemcpyDeviceToHost);
@@ -259,7 +260,9 @@ int main() {
 
     // check result
 #if CHECK_RESULT == 1
+#if FAST_BASELINE == 0
     printDiff(ref, h_C, BK, Ho, Wo, Bi);
+#endif
     free(ref);
     cudaFree(tmp_input_buffer);
     cudaFree(tmp_weight_buffer);

@@ -11,6 +11,7 @@
 #include "transform2d.cu"
 //time measure
 #include <chrono>
+#define FAST_BASELINE 1
 
 //#ifdef CUBLAS_API_H_
 //static const char *_cudaGetErrorEnum(cublasStatus_t error)
@@ -256,7 +257,11 @@ void convLauncherStrideOneLarge2D_base<float>(const float *input, const float *w
     cout << "N: " << N << endl;
     cout << "kernel_size: " << kernel_size << endl;
     cout << "kernel_stride: " << kernel_stride[0] << endl;
+#if FAST_BASELINE == 1
+    inputNorm2WinoTransform2D2 <float> <<<(N - 1 + 512) / 512, 512>>> (input, tmp_input_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, nH, nW, B, H, W, C, pad_h, pad_w, N);
+#else
     inputNorm2WinoTransform2D2_permute <float> <<<(N - 1 + 512) / 512, 512>>> (input, tmp_input_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, nH, nW, B, H, W, C, pad_h, pad_w, N);
+#endif
 
 //    float h_A[B*H*W*C];
 //    float h_B[9*C*K];
@@ -322,7 +327,11 @@ void convLauncherStrideOneLarge2D_base<float>(const float *input, const float *w
     cout << "output_W: " << output_W << endl;
     cout << "C: " << C << endl;
     N = num_split*B*nH*nW*K;
+#if FAST_BASELINE == 1
+    outputWino2NormTransform2D <float> <<<(N - 1 + 512) / 512, 512>>> (tmp_product_buffer, tmp_out_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, B, output_H, output_W, K, N);
+#else
     outputWino2NormTransform2D_permute <float> <<<(N - 1 + 512) / 512, 512>>> (tmp_product_buffer, tmp_out_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, B, output_H, output_W, K, N);
+#endif
 
 //    float h_o1[16*B*nH*nW*K];
 //    float h_o2[num_split*B*output_H*output_W*K];
