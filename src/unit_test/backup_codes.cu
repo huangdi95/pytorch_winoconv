@@ -138,3 +138,109 @@ __global__ void winograd2D(const float *input, const float *weight, float *outpu
 //              accu[k][61] += ip[29] * wv;
 //              accu[k][62] += ip[30] * wv;
 //              accu[k][63] += ip[31] * wv;
+
+/****************************************************/
+/*  bn=64, bc=4, bn=64,                             */
+/*  1847/5392 GFLOPS when C=64,                     */
+/*  1004/1156 GFLOPS when C=4                       */
+/****************************************************/
+template<unsigned int bn, unsigned int bc, unsigned int bk>
+__global__ void winograd2D_bcbn_batch16(const float *input, const float *weight, float *output, int C, int N, int K)
+{
+    int warp_id = threadIdx.x / 32;
+    int lane_id = threadIdx.x % 32;
+    int bx = blockIdx.x % (K / bk);
+    int by = blockIdx.x / (K / bk);
+    float accu[Batch*8*2] = {0};
+    __shared__ float input_smem[Batch*bc*bn]; // TODO: 16 -> 100
+//    __shared__ float weight_smem[Batch*bc*bk]; // TODO: 16 -> 100
+
+    for(int i = 0; i < C; i+=bc) {
+   
+        //////// input transform //////
+#pragma unroll
+        for (int j = 0; j < Batch; j++) {
+//            input_smem[j][threadIdx.x%bc][threadIdx.x/bc] = input[j * bc * bn + threadIdx.x];
+            input_smem[j*256+threadIdx.x] = input[j * C * N + by * C * bn + threadIdx.x%64 * C + i + threadIdx.x/64];
+//            weight_smem[j*512+warp_id*64+lane_id] = weight[j * C * K + (warp_id + i) * K + lane_id + bx*bk];
+//            weight_smem[j*512+warp_id*64+lane_id+32] = weight[j * C * K + (warp_id + i) * K + lane_id + 32 + bx*bk];
+//            input_smem[j][warp_id][lane_id] = input[j * bc * bn + lane_id * bc + threadIdx.x];
+        }
+        //////////////////////////////
+        __syncthreads();
+    
+        ////////////// load register ////////////
+        float *ip = &input_smem[8*warp_id];
+        const float *wp = &weight[lane_id+i*K+bx*bk];
+//        float *wp = &weight_smem[lane_id];
+        /////// batched matmul 32x2x8 outer product//////////
+//#pragma unroll
+//        for(int k = 0; k < Batch/8; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv = wp[0];
+//              for(int l = 0; l < 32; l++) {
+//                accu[k*64+l] += ip[l] * wv;
+//              }
+//              wp += 32; 
+//              wv = wp[0];
+//              for(int l = 32; l < 64; l++) {
+//                accu[k*64+l] += ip[l-32] * wv;
+//              }
+//              wp += (K - 32); 
+//              ip += bn;
+//          }
+//          wp += (C - bc) * K;
+//        }
+#pragma unroll
+        for(int k = 0; k < Batch; k++) {
+#pragma unroll
+          for(int j = 0; j < bc; j++) {
+              float wv = wp[0];
+              for(int l = 0; l < 8; l++) {
+                accu[k*16+l] += ip[l] * wv;
+              }
+              wp += 32;
+              wv = wp[0];
+              for(int l = 8; l < 16; l++) {
+                accu[k*16+l] += ip[l-8] * wv;
+              }
+              wp += (K - 32);
+              ip += bn;
+          }
+          wp += (C - bc) * K;
+        }
+//#pragma unroll
+//        for(int k = 0; k < Batch; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv1 = wp[0];
+//              float wv2 = wp[32];
+//              for(int l = 0; l < 4; l++) {
+//                accu[k][l] += ip[l] * wv1;
+//                accu[k][l+4] += ip[l] * wv2;
+//              }
+//              wp += K; 
+//              ip += bn;
+//          }
+//          wp += (C - bc) * K;
+//        }
+        __syncthreads();
+    }
+    unsigned int offset = (by * bn + warp_id * 8) * K + bx * bk;
+#pragma unroll
+    //TODO: need smem padding when composed
+//    for (int i = 0; i < bn; i++) {
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[i];
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[i+32];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[64+i];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[64+i+32];
+//    }
+    for (int i = 0; i < Batch; i++) {
+        for (int j = 0; j < 8; j++) {
+            output[offset + i * N * K + j * K + lane_id] = accu[i*16 + j];
+            output[offset + i * N * K + j * K + lane_id + 32] = accu[i*16 + j + 8];
+//            output[offset + i * N * K + j * K + lane_id + 32] = accu[i*64 + j + 32];
+        }
+    }
+}

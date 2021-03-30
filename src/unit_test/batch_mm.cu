@@ -9,18 +9,19 @@
 using namespace std;
 #define CHECK_RESULT 0
 #define CUBLAS 1
+#define MY_bcbn_batch16 1
 #define MY_bcbn 0
-#define MY_bnbc 1
+#define MY_bnbc 0
 ////////TODO: not correct yet
-#define Batch 16
+#define Batch 4
 
-#define BN 32
-#define BC 8
-#define BK 64
-
-//#define BN 114688
-//#define BC 64
+//#define BN 32
+//#define BC 8
 //#define BK 64
+
+#define BN 114688
+#define BC 64
+#define BK 64
 
 void randomInit(float*, int);
 void printDiff(float*, float*, int, int);
@@ -40,14 +41,16 @@ computeGold(float* C, const float* A, const float* B, unsigned int hA, unsigned 
             }
 }
 template<unsigned int bn, unsigned int bc, unsigned int bk>
-__global__ void winograd2D_bcbn(const float *input, const float *weight, float *output, int C, int N, int K)
+__global__ void winograd2D_bcbn_batch16(const float *input, const float *weight, float *output, int C, int N, int K)
 {
     int warp_id = threadIdx.x / 32;
     int lane_id = threadIdx.x % 32;
     int bx = blockIdx.x % (K / bk);
     int by = blockIdx.x / (K / bk);
-    float accu[Batch/8][64] = {0};
-    __shared__ float input_smem[Batch][bc][bn]; // TODO: 16 -> 100
+    float accu[Batch*bn/8*2] = {0};
+//    extern __shared__ float input_smem[];
+    __shared__ float input_smem[Batch*bc*bn]; // TODO: 16 -> 100
+//    __shared__ float weight_smem[Batch*bc*bk]; // TODO: 16 -> 100
 
     for(int i = 0; i < C; i+=bc) {
    
@@ -55,100 +58,298 @@ __global__ void winograd2D_bcbn(const float *input, const float *weight, float *
 #pragma unroll
         for (int j = 0; j < Batch; j++) {
 //            input_smem[j][threadIdx.x%bc][threadIdx.x/bc] = input[j * bc * bn + threadIdx.x];
-            input_smem[j][warp_id][lane_id] = input[j * C * N + by * C * bn + lane_id * C + warp_id + i];
+            input_smem[j*256+threadIdx.x] = input[j * C * N + by * C * bn + lane_id * C + i + warp_id];
+//            weight_smem[j*512+warp_id*64+lane_id] = weight[j * C * K + (warp_id + i) * K + lane_id + bx*bk];
+//            weight_smem[j*512+warp_id*64+lane_id+32] = weight[j * C * K + (warp_id + i) * K + lane_id + 32 + bx*bk];
 //            input_smem[j][warp_id][lane_id] = input[j * bc * bn + lane_id * bc + threadIdx.x];
         }
         //////////////////////////////
         __syncthreads();
     
         ////////////// load register ////////////
-        float *ip = &input_smem[2*warp_id][0][0];
-        const float *wp = &weight[2*warp_id*C*K+lane_id+i*K+bx*bk];
+        float *ip = &input_smem[8*(warp_id/2)];
+        const float *wp = &weight[threadIdx.x%64+i*K+bx*bk];
+//        float *wp = &weight_smem[lane_id];
         /////// batched matmul 32x2x8 outer product//////////
+//#pragma unroll
+//        for(int k = 0; k < Batch/8; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv = wp[0];
+//              for(int l = 0; l < 32; l++) {
+//                accu[k*64+l] += ip[l] * wv;
+//              }
+//              wp += 32; 
+//              wv = wp[0];
+//              for(int l = 32; l < 64; l++) {
+//                accu[k*64+l] += ip[l-32] * wv;
+//              }
+//              wp += (K - 32); 
+//              ip += bn;
+//          }
+//          wp += (C - bc) * K;
+//        }
 #pragma unroll
-        for(int k = 0; k < Batch/8; k++) {
+        for(int k = 0; k < Batch; k++) {
 #pragma unroll
           for(int j = 0; j < bc; j++) {
               float wv = wp[0];
-              for(int l = 0; l < 32; l++) {
-                accu[k][l] += ip[l] * wv;
+              for(int l = 0; l < 8; l++) {
+                accu[k*8+l] += ip[l] * wv;
               }
-              wp += 32; 
-              wv = wp[0];
-              for(int l = 32; l < 64; l++) {
-                accu[k][l] += ip[l-32] * wv;
-              }
-              wp += (K - 32); 
+//              wp += 32;
+//              wv = wp[0];
+//              for(int l = 8; l < 16; l++) {
+//                accu[k*64+l] += ip[l-32] * wv;
+//              }
+//              wp += (K - 32);
+              wp += K;
               ip += bn;
           }
           wp += (C - bc) * K;
         }
+//#pragma unroll
+//        for(int k = 0; k < Batch; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv1 = wp[0];
+//              float wv2 = wp[32];
+//              for(int l = 0; l < 4; l++) {
+//                accu[k][l] += ip[l] * wv1;
+//                accu[k][l+4] += ip[l] * wv2;
+//              }
+//              wp += K; 
+//              ip += bn;
+//          }
+//          wp += (C - bc) * K;
+//        }
         __syncthreads();
     }
-    unsigned int offset = by * bn * K + bx * bk;
+    unsigned int offset = (by * bn + warp_id/2 * 8) * K + bx * bk;
 #pragma unroll
     //TODO: need smem padding when composed
-    for (int i = 0; i < bn; i++) {
-        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[0][i];
-        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[0][i+32];
-        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[1][i];
-        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[1][i+32];
+//    for (int i = 0; i < bn; i++) {
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[i];
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[i+32];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[64+i];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[64+i+32];
+//    }
+    for (int i = 0; i < Batch; i++) {
+        for (int j = 0; j < 8; j++) {
+            output[offset + i * N * K + j * K + threadIdx.x%64] = accu[i*8 + j];
+//            output[offset + i * N * K + j * K + lane_id + 32] = accu[i*64 + j + 32];
+        }
     }
 }
-template<unsigned int bn, unsigned int bc, unsigned int bk>
-__global__ void winograd2D_bnbc(const float *input, const float *weight, float *output, int C, int N, int K)
-{
-    int warp_id = threadIdx.x / 32;
-    int lane_id = threadIdx.x % 32;
-    int bx = blockIdx.x % (K / bk);
-    int by = blockIdx.x / (K / bk);
-    float accu[Batch/8][64] = {0};
-    __shared__ float input_smem[Batch][bn][bc]; // TODO: 16 -> 100
-
-    for(int i = 0; i < C; i+=bc) {
-   
-        //////// input transform //////
-#pragma unroll
-        for (int j = 0; j < Batch; j++) {
-//            input_smem[j][threadIdx.x%bc][threadIdx.x/bc] = input[j * bc * bn + threadIdx.x];
-            input_smem[j][lane_id][warp_id] = input[j * C * N + by * C * bn + lane_id * C + warp_id + i];
-//            input_smem[j][warp_id][lane_id] = input[j * bc * bn + lane_id * bc + threadIdx.x];
-        }
-        //////////////////////////////
-        __syncthreads();
-    
-        ////////////// load register ////////////
-        float *ip = &input_smem[2*warp_id][0][0];
-        const float *wp = &weight[2*warp_id*C*K+lane_id+i*K+bx*bk];
-        /////// batched matmul 32x2x8 outer product//////////
-#pragma unroll
-        for(int k = 0; k < Batch/8; k++) {
-#pragma unroll
-          for(int j = 0; j < bc; j++) {
-              float wv = wp[0];
-              for(int l = 0; l < 32; l++) {
-                accu[k][l] += input_smem[2*warp_id][l][j] * wv;
-              }
-              wp += 32; 
-              wv = wp[0];
-              for(int l = 32; l < 64; l++) {
-                accu[k][l] += input_smem[2*warp_id][l-32][j] * wv;
-              }
-              wp += (K - 32); 
-          }
-          wp += (C - bc) * K;
-        }
-        __syncthreads();
-    }
-    unsigned int offset = by * bn * K + bx * bk;
-#pragma unroll
-    for (int i = 0; i < bn; i++) {
-        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[0][i];
-        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[0][i+32];
-        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[1][i];
-        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[1][i+32];
-    }
-}
+//template<unsigned int bn, unsigned int bc, unsigned int bk>
+//__global__ void winograd2D_bcbn_batch16_back(const float *input, const float *weight, float *output, int C, int N, int K)
+//{
+//    int warp_id = threadIdx.x / 32;
+//    int lane_id = threadIdx.x % 32;
+//    int bx = blockIdx.x % (K / bk);
+//    int by = blockIdx.x / (K / bk);
+//    float accu[Batch*8] = {0};
+//    __shared__ float input_smem[Batch*bc*bn]; // TODO: 16 -> 100
+//    __shared__ float weight_smem[Batch*bc*bk]; // TODO: 16 -> 100
+//
+//    for(int i = 0; i < C; i+=bc) {
+//   
+//        //////// input transform //////
+//#pragma unroll
+//        for (int j = 0; j < Batch; j++) {
+////            input_smem[j][threadIdx.x%bc][threadIdx.x/bc] = input[j * bc * bn + threadIdx.x];
+//            input_smem[j*256+warp_id*32+lane_id] = input[j * C * N + by * C * bn + lane_id * C + warp_id + i];
+//            weight_smem[j*512+warp_id*64+lane_id] = weight[j * C * K + (warp_id + i) * K + lane_id + bx*bk];
+//            weight_smem[j*512+warp_id*64+lane_id+32] = weight[j * C * K + (warp_id + i) * K + lane_id + 32 + bx*bk];
+////            input_smem[j][warp_id][lane_id] = input[j * bc * bn + lane_id * bc + threadIdx.x];
+//        }
+//        //////////////////////////////
+//        __syncthreads();
+//    
+//        ////////////// load register ////////////
+//        float *ip = &input_smem[4*warp_id];
+////        const float *wp = &weight[lane_id+i*K+bx*bk];
+//        float *wp = &weight_smem[lane_id];
+//        /////// batched matmul 32x2x8 outer product//////////
+////#pragma unroll
+////        for(int k = 0; k < Batch/8; k++) {
+////#pragma unroll
+////          for(int j = 0; j < bc; j++) {
+////              float wv = wp[0];
+////              for(int l = 0; l < 32; l++) {
+////                accu[k*64+l] += ip[l] * wv;
+////              }
+////              wp += 32; 
+////              wv = wp[0];
+////              for(int l = 32; l < 64; l++) {
+////                accu[k*64+l] += ip[l-32] * wv;
+////              }
+////              wp += (K - 32); 
+////              ip += bn;
+////          }
+////          wp += (C - bc) * K;
+////        }
+//#pragma unroll
+//        for(int k = 0; k < Batch; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv = wp[0];
+//              for(int l = 0; l < 4; l++) {
+//                accu[k*8+l] += ip[l] * wv;
+//              }
+//              wp += 32; 
+//              wv = wp[0];
+//              for(int l = 4; l < 8; l++) {
+//                accu[k*8+l] += ip[l-4] * wv;
+//              }
+//              wp += (K - 32); 
+//              ip += bn;
+//          }
+//          wp += (C - bc) * K;
+//        }
+////#pragma unroll
+////        for(int k = 0; k < Batch; k++) {
+////#pragma unroll
+////          for(int j = 0; j < bc; j++) {
+////              float wv1 = wp[0];
+////              float wv2 = wp[32];
+////              for(int l = 0; l < 4; l++) {
+////                accu[k][l] += ip[l] * wv1;
+////                accu[k][l+4] += ip[l] * wv2;
+////              }
+////              wp += K; 
+////              ip += bn;
+////          }
+////          wp += (C - bc) * K;
+////        }
+//        __syncthreads();
+//    }
+//    unsigned int offset = (by * bn + warp_id * 4) * K + bx * bk;
+//#pragma unroll
+//    //TODO: need smem padding when composed
+//    for (int i = 0; i < bn; i++) {
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[i];
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[i+32];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[64+i];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[64+i+32];
+//    }
+////    for (int i = 0; i < Batch; i++) {
+////        for (int j = 0; j < 4; j++) {
+////            output[offset + i * N * K + j * K + lane_id] = accu[i][j];
+////            output[offset + i * N * K + j * K + lane_id + 32] = accu[i][j + 4];
+////        }
+////    }
+//}
+//template<unsigned int bn, unsigned int bc, unsigned int bk>
+//__global__ void winograd2D_bcbn(const float *input, const float *weight, float *output, int C, int N, int K)
+//{
+//    int warp_id = threadIdx.x / 32;
+//    int lane_id = threadIdx.x % 32;
+//    int bx = blockIdx.x % (K / bk);
+//    int by = blockIdx.x / (K / bk);
+//    float accu[Batch/8][64] = {0};
+//    __shared__ float input_smem[Batch][bc][bn]; // TODO: 16 -> 100
+//
+//    for(int i = 0; i < C; i+=bc) {
+//   
+//        //////// input transform //////
+//#pragma unroll
+//        for (int j = 0; j < Batch; j++) {
+////            input_smem[j][threadIdx.x%bc][threadIdx.x/bc] = input[j * bc * bn + threadIdx.x];
+//            input_smem[j][warp_id][lane_id] = input[j * C * N + by * C * bn + lane_id * C + warp_id + i];
+////            input_smem[j][warp_id][lane_id] = input[j * bc * bn + lane_id * bc + threadIdx.x];
+//        }
+//        //////////////////////////////
+//        __syncthreads();
+//    
+//        ////////////// load register ////////////
+//        float *ip = &input_smem[2*warp_id][0][0];
+//        const float *wp = &weight[2*warp_id*C*K+lane_id+i*K+bx*bk];
+//        /////// batched matmul 32x2x8 outer product//////////
+//#pragma unroll
+//        for(int k = 0; k < Batch/8; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv = wp[0];
+//              for(int l = 0; l < 32; l++) {
+//                accu[k][l] += ip[l] * wv;
+//              }
+//              wp += 32; 
+//              wv = wp[0];
+//              for(int l = 32; l < 64; l++) {
+//                accu[k][l] += ip[l-32] * wv;
+//              }
+//              wp += (K - 32); 
+//              ip += bn;
+//          }
+//          wp += (C - bc) * K;
+//        }
+//        __syncthreads();
+//    }
+//    unsigned int offset = by * bn * K + bx * bk;
+//#pragma unroll
+//    //TODO: need smem padding when composed
+//    for (int i = 0; i < bn; i++) {
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[0][i];
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[0][i+32];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[1][i];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[1][i+32];
+//    }
+//}
+//template<unsigned int bn, unsigned int bc, unsigned int bk>
+//__global__ void winograd2D_bnbc(const float *input, const float *weight, float *output, int C, int N, int K)
+//{
+//    int warp_id = threadIdx.x / 32;
+//    int lane_id = threadIdx.x % 32;
+//    int bx = blockIdx.x % (K / bk);
+//    int by = blockIdx.x / (K / bk);
+//    float accu[Batch/8][64] = {0};
+//    __shared__ float input_smem[Batch][bn][bc]; // TODO: 16 -> 100
+//
+//    for(int i = 0; i < C; i+=bc) {
+//   
+//        //////// input transform //////
+//#pragma unroll
+//        for (int j = 0; j < Batch; j++) {
+////            input_smem[j][threadIdx.x%bc][threadIdx.x/bc] = input[j * bc * bn + threadIdx.x];
+//            input_smem[j][lane_id][warp_id] = input[j * C * N + by * C * bn + lane_id * C + warp_id + i];
+////            input_smem[j][warp_id][lane_id] = input[j * bc * bn + lane_id * bc + threadIdx.x];
+//        }
+//        //////////////////////////////
+//        __syncthreads();
+//    
+//        ////////////// load register ////////////
+//        float *ip = &input_smem[2*warp_id][0][0];
+//        const float *wp = &weight[2*warp_id*C*K+lane_id+i*K+bx*bk];
+//        /////// batched matmul 32x2x8 outer product//////////
+//#pragma unroll
+//        for(int k = 0; k < Batch/8; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv = wp[0];
+//              for(int l = 0; l < 32; l++) {
+//                accu[k][l] += input_smem[2*warp_id][l][j] * wv;
+//              }
+//              wp += 32; 
+//              wv = wp[0];
+//              for(int l = 32; l < 64; l++) {
+//                accu[k][l] += input_smem[2*warp_id][l-32][j] * wv;
+//              }
+//              wp += (K - 32); 
+//          }
+//          wp += (C - bc) * K;
+//        }
+//        __syncthreads();
+//    }
+//    unsigned int offset = by * bn * K + bx * bk;
+//#pragma unroll
+//    for (int i = 0; i < bn; i++) {
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id] = accu[0][i];
+//        output[offset + 2 * warp_id * N * K + i * K + lane_id + 32] = accu[0][i+32];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id] = accu[1][i];
+//        output[offset + (2 * warp_id + 1) * N * K + i * K + lane_id + 32] = accu[1][i+32];
+//    }
+//}
 
 template <typename T>
 __global__ void forwardAssign2D(const T *Input, const T *Weight, T *tmp_data_buffer, const T **Input_ptrs_gpu, const T **Weight_ptrs_gpu, T **tmp_product_ptrs_gpu, int C, int B, int K) {
@@ -215,6 +416,42 @@ int main() {
     cudaEventElapsedTime(&msecTotal, start, stop);
     printf("Naive CPU (Golden Reference)\n");
     printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
+#endif
+
+#if MY_bcbn_batch16 == 1
+    cudaDeviceSynchronize();
+    /****************************************************/
+    /*  My kernel                                       */
+    /****************************************************/
+
+    // copy host memory to device
+    cudaMemcpy(d_A, h_A, mem_size_A,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, mem_size_B,
+                              cudaMemcpyHostToDevice);
+    // create and start timer
+    cudaEventCreate(&start);
+    cudaEventRecord(start, NULL); 
+    // setup execution parameters
+    // naive implementation
+//    int maxbytes = 67584; // 96 KB
+//    cudaFuncSetAttribute(winograd2D_bcbn_batch16<32, 8, 64>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    winograd2D_bcbn_batch16<32, 8, 64><<<(BN/32)*(BK/64), 256>>>(d_A, d_B, d_C, BC, BN, BK);
+    // stop and destroy timer
+    cudaEventCreate(&stop);
+    cudaEventRecord(stop, NULL);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
+    printf("Loop unrolling GPU 2\n");
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
+    // copy result from device to host
+    cudaMemcpy(h_C, d_C, mem_size_C,
+                              cudaMemcpyDeviceToHost);
+    for(int i = 0; i < 10; i++) {
+        cout << h_C[i] << " "; 
+    }
+    cout << endl;
+    cudaDeviceSynchronize();
 #endif
 
 #if MY_bcbn == 1
