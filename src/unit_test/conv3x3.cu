@@ -5,7 +5,7 @@
 #include "fused_kernels.cu"
 //time measure
 #include <chrono>
-#define CHECK_RESULT 1
+#define CHECK_RESULT 0
 #define MY 1
 #define Batch 16
 //#define BN 32
@@ -14,12 +14,12 @@
 //#define BN 32*32
 //#define BC 8*32
 #define Bi 32    //input batch
-#define Hi 224  //input h
-#define Wi 512 //input w
-#define BC 8*8 //input c
+#define Hi 112  //input h
+#define Wi 256 //input w
+#define BC 32 //input c
 #define BK 64   //output c
-#define PH 2    //pad h
-#define PW 2    //pad w
+#define PH 1    //pad h
+#define PW 1    //pad w
 
 void randomInit(float*, int);
 void printDiff(float*, float*, int, int, int, int);
@@ -73,9 +73,11 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
     /////////// output transform //////////////
     tid = blockIdx.x * blockDim.x + threadIdx.x;
     bz = tid / (B* nH * nW * K);
+#pragma unroll
     for (int i = 0; i < bk; i += bk/2) {
         //////// load wino output /////
         unsigned int offset = by * bn * K + bx * bk;
+#pragma unroll
         for (int j = 0; j < bn; j++) {
             output_smem[((2 * warp_id) * bn + j) * (bk/2 + 1) + lane_id] = accu[0][j + i];
             output_smem[((2 * warp_id + 1) * bn + j) * (bk/2 + 1) + lane_id] = accu[1][j + i];
