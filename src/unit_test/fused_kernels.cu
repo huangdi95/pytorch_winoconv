@@ -3,6 +3,7 @@
     > Mail: hd232508@163.com 
     > Created Time: Sun 28 Mar 2021 08:18:17 PM CST
  ************************************************************************/
+#include "calculation_kernels2d.cu"
 template <unsigned int bn, unsigned int bc, unsigned int bk>
 __device__ void inputNorm2WinoTransform2D_fused(const float *norm_input, float *input_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int by, int bz, int warp_id, int lane_id, int c_i) {
 
@@ -23,10 +24,10 @@ __device__ void inputNorm2WinoTransform2D_fused(const float *norm_input, float *
 //TODO: #pragma unroll
       for(int j = 0; j < 4; j++) {
         for(int k = 0; k < 4; k++) {
-          f_y = yBase + j;// + h_start;
-          f_x = xBase + k;// + w_start;
+          f_y = yBase + j+3*bz;// + h_start;
+          f_x = xBase + k+3*bz;// + w_start;
           if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-//            input_patch[j * splitxW + k] = float(0);
+//            input_patch[j * 4 + k] = float(1);
             input_patch[j * 4 + k] = norm_input[((((warp_id + c_i) * H + f_y) * W + f_x)) * B + lane_id];
           } else {
             input_patch[j * 4 + k] = float(0);
@@ -36,7 +37,7 @@ __device__ void inputNorm2WinoTransform2D_fused(const float *norm_input, float *
 
     float trans_input_patch[16];
 
-    inputNorm2WinoCalculation2D(input_patch, trans_input_patch, 1, 1);
+    inputNorm2WinoCalculation2D_fused(input_patch, trans_input_patch, 3, 3);
 
 //TODO: #pragma unroll
     for(int i = 0; i < 16; i++) {
@@ -62,7 +63,7 @@ __device__ void outputWino2NormTransform2D_fused(float *output_smem, float *outp
     
         float output_patch[4] = {0};
 
-        outputWino2NormCalculation2D(product_patch, output_patch, 1, 1);
+        outputWino2NormCalculation2D_fused(product_patch, output_patch, 3, 3);
 
         unsigned int offset_k = bx * bk + k_i + warp_id + j;
 
@@ -93,18 +94,18 @@ __device__ void outputWino2NormTransform2D_fused_batch16(float *output_smem, flo
 //    
         float output_patch[4] = {0};
 //
-        outputWino2NormCalculation2D(product_patch, output_patch, splitxH - 1, splitxW - 1);
+        outputWino2NormCalculation2D_fused(product_patch, output_patch, 3, 3);
 //
         unsigned int offset_k = bx * bk + threadIdx.x%64;
         unsigned int offset_n = (warp_id/2)*8 + j;
 
-        output[((offset_n * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + offset_k] += output_patch[0];
+        output[((offset_n * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + offset_k] = output_patch[0];
         if(output_W % 2 == 0 || w != nW - 1)
-          output[((offset_n * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + offset_k] += output_patch[1];
+          output[((offset_n * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + offset_k] = output_patch[1];
         if(output_H % 2 == 0 || h != nH - 1)
-          output[((offset_n * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + offset_k] += output_patch[2];
+          output[((offset_n * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + offset_k] = output_patch[2];
         if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
-          output[((offset_n * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + offset_k] += output_patch[3];
+          output[((offset_n * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + offset_k] = output_patch[3];
     }
 }
 
