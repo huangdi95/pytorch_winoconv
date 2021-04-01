@@ -5,7 +5,20 @@
  ************************************************************************/
 #include "calculation_kernels2d.cu"
 template <int splitH, int splitW>
-__device__ void inputNorm2WinoTransform2D_fused(const float *norm_input, float *input_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int by, int bz, int warp_id, int lane_id, int c_i, int h_start, int w_start) {
+__device__ void inputNorm2WinoTransform2D_fused(float *input_patch, float *input_smem, int warp_id, int lane_id) {
+
+    float trans_input_patch[16];
+
+    inputNorm2WinoCalculation2D_fused(input_patch, trans_input_patch, splitH, splitW);
+
+//TODO: #pragma unroll
+    for(int i = 0; i < (splitH + 1) * (splitW + 1); i++) {
+      input_smem[i * 256 + warp_id * 32 + lane_id] = float(trans_input_patch[i]);
+    }
+}
+
+template <int splitH, int splitW>
+__device__ void inputNorm2WinoTransform2D_fused(float *norm_input, float *input_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int by, int bz, int warp_id, int lane_id, int c_i, int h_start, int w_start) {
 
  //   int h_end = H_end[bz];
  //   int h_start = H_start[bz];
@@ -51,11 +64,11 @@ __device__ void outputWino2NormTransform2D_fused(float *output_smem, float *outp
     int h = by / nW; 
     int w = by % nW;
 
-    for (int j = 0; j < bk/2; j += bk/8) {
+    for (int j = 0; j < 32; j += blockDim.x/32) {
 
         float product_patch[16] = {0};
         for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
-            product_patch[i] = output_smem[(i * bn + lane_id) * (bk/2 + 1) + warp_id + j];
+            product_patch[i] = output_smem[(i * bn + lane_id) * (32 + 1) + warp_id + j];
         }
     
         float output_patch[4] = {0};

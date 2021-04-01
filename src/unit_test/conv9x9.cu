@@ -15,40 +15,76 @@
 #define Bi 32    //input batch
 #define Hi 112  //input h
 #define Wi 256 //input w
-#define BC 8 //input c
+#define BC 32 //input c
 #define BK 64   //output c
 #define PH 1    //pad h
 #define PW 1    //pad w
 #define FILTER 9 //filter size
 
 void randomInit(float*, int);
+void randomInit1(float*, int);
 void printDiff(float*, float*, int, int, int, int);
 
-template<unsigned int bn, unsigned int bc, unsigned int bk>
+template<unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
 __global__ void winograd2DFused(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
     int warp_id = threadIdx.x / 32;
     int lane_id = threadIdx.x % 32;
     int bx = blockIdx.x % (K / bk);
     int by = blockIdx.x / (K / bk);  //TODO: slow???
-    int tid = by * blockDim.x + threadIdx.x;
-//    int bz = tid / (B* nH * nW * C);
-    float accu[16/8][64] = {0};
+    float accu[16/8][bk] = {0};
 
     extern __shared__ float smem[]; // [16, bn, bk/2+1] with 1 conflict padding
 
     float *input_smem = smem;
     float *output_smem = smem + 16 * bc * bn;
 
-    for (int bz = 0; bz < 9; bz++) {
-    for (int i = 0; i < C; i+=bc) {
+    int yBase = 2 * (by / nW) - pad_h;
+    int xBase = 2 * (by % nW) - pad_w;
+    int f_x, f_y;
+    float prefetch1[16];
+    float *input_patch = &prefetch1[0];
+/////////////// prefetch /////////////
+    for(int j = 0; j < (splitH + 1); j++) {
+      for(int k = 0; k < (splitW + 1); k++) {
+        f_y = yBase + j;
+        f_x = xBase + k;
+        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+          prefetch1[j * (splitH+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+        } else {
+          prefetch1[j * (splitW+1) + k] = float(0);
+        }
+      }
+    }
+/////////////////////////////////////
+    for (int count = 0; count < C * num_split; count+=bc) {
+        int bz = count / C;
+        int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<3, 3>(input, input_smem, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, H, W, C, pad_h, pad_w, by, bz, warp_id, lane_id, i, H_start[bz], W_start[bz]);
+        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
-        float *ip = &input_smem[2*warp_id*bc*bn];
-        const float *wp = &weight[(2*warp_id+16*bz)*C*K+lane_id+i*K+bx*bk];
+/////////////// prefetch /////////////
+        if (count+bc < C * num_split) {
+          int bz2 = (count + bc) / C;
+          int i2 = (count + bc) % C;
+          for(int m = 0; m < (splitH + 1); m++) {
+            for(int n = 0; n < (splitW + 1); n++) {
+              f_y = yBase + m + H_start[bz2];
+              f_x = xBase + n + W_start[bz2];
+              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                prefetch1[m * (splitH + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+              } else {
+                prefetch1[m * (splitW + 1) + n] = float(0);
+              }
+            }
+          }
+        }
+/////////////////////////////////////
+
+        float *ip = &input_smem[2 * warp_id * bc * bn];
+        const float *wp = &weight[(2 * warp_id + 16 * bz) * C * K + lane_id + i * K + bx * bk];
 ///////////// batched matmul bcbn 32x2x8 outer product//////////////
 #pragma unroll
         for(int k = 0; k < 16/8; k++) {
@@ -58,12 +94,16 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
               for(int l = 0; l < 32; l++) {
                 accu[k][l] += ip[l] * wv;
               }
-              wp += 32; 
-              wv = wp[0];
-              for(int l = 32; l < 64; l++) {
-                accu[k][l] += ip[l-32] * wv;
+              if (bk > 32) {
+                wp += 32; 
+                wv = wp[0];
+                for(int l = 32; l < 64; l++) {
+                  accu[k][l] += ip[l-32] * wv;
+                }
+                wp += (K - 32);
+              } else if (bk <= 32) {
+                wp += K;
               }
-              wp += (K - 32);
               ip += bn;
           }
           wp += (C - bc) * K;
@@ -71,27 +111,16 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
         __syncthreads();
 ////////////////////////////////////////////////////////////////
     }
-    }
-//    for (int i = 0; i < Batch; i++) {
-//        for (int j = 0; j < 8; j++) {
-//            output[offset + i * N * K + j * K + threadIdx.x%64] = accu[i*8 + j];
-////            output[offset + i * N * K + j * K + lane_id + 32] = accu[i*64 + j + 32];
-//        }
-//    }
-    /////////// output transform //////////////
-//    outputWino2NormTransform2D_fused_batch16<bn, bc, bk>(accu, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, bz, warp_id, lane_id);
-//    tid = blockIdx.x * blockDim.x + threadIdx.x;
-//    bz = tid / (B* nH * nW * K);
-    for (int i = 0; i < bk; i += bk/2) {
+    for (int i = 0; i < bk; i += 32) {
         //////// load wino output /////
         unsigned int offset = by * bn * K + bx * bk;
         for (int j = 0; j < bn; j++) {
-            output_smem[((2 * warp_id) * bn + j) * (bk/2 + 1) + lane_id] = accu[0][j + i];
-            output_smem[((2 * warp_id + 1) * bn + j) * (bk/2 + 1) + lane_id] = accu[1][j + i];
+            output_smem[((2 * warp_id) * bn + j) * (32 + 1) + lane_id] = accu[0][j + i];
+            output_smem[((2 * warp_id + 1) * bn + j) * (32 + 1) + lane_id] = accu[1][j + i];
         }
         __syncthreads();
         //////// output transform //////
-        outputWino2NormTransform2D_fused<bn, bc, bk, 3, 3>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i);
+        outputWino2NormTransform2D_fused<bn, bc, bk, splitH, splitW>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i);
         __syncthreads();
         //////////////////////////////
     }
@@ -294,9 +323,12 @@ int main() {
     dim3 gDim2(BC, num_split, 1);
     wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
 
-    int maxbytes = 83968; // 82 KB
-    cudaFuncSetAttribute(winograd2DFused<32, 8, 64>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
-    winograd2DFused<32, 8, 64><<<(BN/32)*(BK/64), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    const int bn = 32;
+    const int bc = 8;
+    const int bk = 64;
+    const int maxbytes = 16 * (bn * bc + bn * 33) * 4; // 82 KB
+    cudaFuncSetAttribute(winograd2DFused<bn, bc, bk, 3, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    winograd2DFused<bn, bc, bk, 3, 3><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
     
     // stop and destroy timer
     cudaEventCreate(&stop);
@@ -410,4 +442,10 @@ void randomInit(float* data, int size)
 {
     for (int i = 0; i < size; ++i)
         data[i] = rand() / (float)RAND_MAX;
+}
+
+void randomInit1(float* data, int size)
+{
+    for (int i = 0; i < size; ++i)
+        data[i] = 1;//rand() / (float)RAND_MAX;
 }
