@@ -4,8 +4,8 @@
     > Created Time: Sun 28 Mar 2021 08:18:17 PM CST
  ************************************************************************/
 #include "calculation_kernels2d.cu"
-template <unsigned int bn, unsigned int bc, unsigned int bk>
-__device__ void inputNorm2WinoTransform2D_fused(const float *norm_input, float *input_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int by, int bz, int warp_id, int lane_id, int c_i) {
+template <int splitH, int splitW>
+__device__ void inputNorm2WinoTransform2D_fused(const float *norm_input, float *input_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int by, int bz, int warp_id, int lane_id, int c_i, int h_start, int w_start) {
 
  //   int h_end = H_end[bz];
  //   int h_start = H_start[bz];
@@ -22,48 +22,45 @@ __device__ void inputNorm2WinoTransform2D_fused(const float *norm_input, float *
 
     int f_x, f_y;
 //TODO: #pragma unroll
-      for(int j = 0; j < 4; j++) {
-        for(int k = 0; k < 4; k++) {
-          f_y = yBase + j+3*bz;// + h_start;
-          f_x = xBase + k+3*bz;// + w_start;
+      for(int j = 0; j < (splitH+1); j++) {
+        for(int k = 0; k < (splitW+1); k++) {
+          f_y = yBase + j+ h_start;
+          f_x = xBase + k+ w_start;
           if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
 //            input_patch[j * 4 + k] = float(1);
-            input_patch[j * 4 + k] = norm_input[((((warp_id + c_i) * H + f_y) * W + f_x)) * B + lane_id];
+            input_patch[j * (splitH+1) + k] = norm_input[((((warp_id + c_i) * H + f_y) * W + f_x)) * B + lane_id];
           } else {
-            input_patch[j * 4 + k] = float(0);
+            input_patch[j * (splitW+1) + k] = float(0);
           }
         }
       }
 
     float trans_input_patch[16];
 
-    inputNorm2WinoCalculation2D_fused(input_patch, trans_input_patch, 3, 3);
+    inputNorm2WinoCalculation2D_fused(input_patch, trans_input_patch, splitH, splitW);
 
 //TODO: #pragma unroll
-    for(int i = 0; i < 16; i++) {
+    for(int i = 0; i < (splitH+1)*(splitW+1); i++) {
 //      input_smem[i*C*nH*nW*B+(warp_id+c_i)*nH*nW*B+by*B+lane_id] = float(trans_input_patch[i]);
       input_smem[i * 256 + warp_id * 32 + lane_id] = float(trans_input_patch[i]);
     }
 }
 
-template <unsigned int bn, unsigned int bc, unsigned int bk>
+template <unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
 __device__ void outputWino2NormTransform2D_fused(float *output_smem, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int output_H, int output_W, int bx, int by, int bz, int warp_id, int lane_id, int k_i) {
     int h = by / nW; 
     int w = by % nW;
 
-//    int splitxH = H_end[bz] - H_start[bz] + 1;
-//    int splitxW = W_end[bz] - W_start[bz] + 1;
-
     for (int j = 0; j < bk/2; j += bk/8) {
 
         float product_patch[16] = {0};
-        for (int i = 0; i < 16; i++) {
+        for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
             product_patch[i] = output_smem[(i * bn + lane_id) * (bk/2 + 1) + warp_id + j];
         }
     
         float output_patch[4] = {0};
 
-        outputWino2NormCalculation2D_fused(product_patch, output_patch, 3, 3);
+        outputWino2NormCalculation2D_fused(product_patch, output_patch, splitH, splitW);
 
         unsigned int offset_k = bx * bk + k_i + warp_id + j;
 

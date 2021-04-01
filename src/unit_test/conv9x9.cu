@@ -15,7 +15,7 @@
 #define Bi 32    //input batch
 #define Hi 112  //input h
 #define Wi 256 //input w
-#define BC 32 //input c
+#define BC 8 //input c
 #define BK 64   //output c
 #define PH 1    //pad h
 #define PW 1    //pad w
@@ -43,12 +43,12 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
     for (int i = 0; i < C; i+=bc) {
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<bn, bc, bk>(input, input_smem, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, H, W, C, pad_h, pad_w, by, bz, warp_id, lane_id, i);
+        inputNorm2WinoTransform2D_fused<3, 3>(input, input_smem, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, H, W, C, pad_h, pad_w, by, bz, warp_id, lane_id, i, H_start[bz], W_start[bz]);
         __syncthreads();
         //////////////////////////////
 
         float *ip = &input_smem[2*warp_id*bc*bn];
-        const float *wp = &weight[2*warp_id*C*K+lane_id+i*K+bx*bk];
+        const float *wp = &weight[(2*warp_id+16*bz)*C*K+lane_id+i*K+bx*bk];
 ///////////// batched matmul bcbn 32x2x8 outer product//////////////
 #pragma unroll
         for(int k = 0; k < 16/8; k++) {
@@ -91,7 +91,7 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
         }
         __syncthreads();
         //////// output transform //////
-        outputWino2NormTransform2D_fused<bn, bc, bk>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i);
+        outputWino2NormTransform2D_fused<bn, bc, bk, 3, 3>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i);
         __syncthreads();
         //////////////////////////////
     }
@@ -177,8 +177,8 @@ int main() {
     /*  Preparations                                    */
     /****************************************************/
     
-    int Ho=Hi-2+2*PH;
-    int Wo=Wi-2+2*PW;
+    int Ho=Hi-FILTER+1+2*PH;//TODO
+    int Wo=Wi-FILTER+1+2*PW;
     int NH=(Ho+1)/2; //nH
     int NW=(Wo+1)/2; //nW
     int BN=NH*NW*Bi;  //N 
@@ -223,6 +223,11 @@ int main() {
     int H_e[] = {3}; 
     int W_s[] = {0}; 
     int W_e[] = {3}; 
+#elif FILTER == 6
+    int H_s[] = {0, 0, 3, 3};
+    int H_e[] = {3, 3, 6, 6};
+    int W_s[] = {0, 3, 0, 3};
+    int W_e[] = {3, 6, 3, 6};
 #elif FILTER == 7
     int H_s[] = {0, 0, 0, 3, 3, 3, 6, 6, 6};
     int H_e[] = {3, 3, 3, 6, 6, 6, 7, 7, 7};
@@ -390,7 +395,7 @@ void printDiff(float *data1, float *data2, int d0, int d1, int d2, int d3)
       for (i=0; i<d2; i++) {
         for (x=0; x<d3; x++) {
           idx = l*d1*d2*d3+j*d2*d3+i*d3+x;
-          if (fabs(data1[idx] - data2[idx]) > 0.00001 ) {
+          if (fabs(data1[idx] - data2[idx]) > 0.001 ) {
              printf("diff(%d,%d,%d,%d) CPU=%4.4f, GPU=%4.4f \n", l,j,i,x, data1[idx], data2[idx]);
              error_count++;
           }
