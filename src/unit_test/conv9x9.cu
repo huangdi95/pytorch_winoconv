@@ -3,10 +3,16 @@
 #include <stdio.h>
 #include "conv_base.cu"
 #include "fused_kernels.cu"
+#include "composer_kernels.cu"
 //time measure
 #include <chrono>
 #define CHECK_RESULT 0
-#define MY 1
+#define MY 0
+#define KERNEL 0
+#define SHIFT 0
+#define BN16 0
+#define SPLIT 1
+#define ADD 0
 //#define BN 32
 //#define BC 8
 //#define BK 64
@@ -26,17 +32,18 @@ void randomInit1(float*, int);
 void printDiff(float*, float*, int, int, int, int);
 
 template<unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
-__global__ void winograd2DFused(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
+__global__ void winograd2DFused_kernel(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split, int size_C) {
     int warp_id = threadIdx.x / 32;
     int lane_id = threadIdx.x % 32;
     int bx = blockIdx.x % (K / bk);
     int by = blockIdx.x / (K / bk);  //TODO: slow???
     float accu[16/8][bk] = {0};
 
-    extern __shared__ float smem[]; // [16, bn, bk/2+1] with 1 conflict padding
+    extern __shared__ float smem[]; // [16, bn/2, bk/2+1] with 0.5 conflict padding, the last dimension is bk/4
 
     float *input_smem = smem;
-    float *output_smem = smem + 16 * bc * bn;
+    float *output_smem = smem;
+    float *agg_smem = smem + 16*16*32;
 
     int yBase = 2 * (by / nW) - pad_h;
     int xBase = 2 * (by % nW) - pad_w;
@@ -49,7 +56,110 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
         f_y = yBase + j;
         f_x = xBase + k;
         if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-          prefetch1[j * (splitH+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+//          prefetch1[j * (splitW+1) + k] = float(0);
+        } else {
+          prefetch1[j * (splitW+1) + k] = float(0);
+        }
+      }
+    }
+
+    /****************************************************/
+    /*  gmem                                            */
+    /****************************************************/
+    kernel_16_gmem<bn, bc, bk, 3, 3, 0, 3>(input, input_patch, input_smem, weight, output_smem, output, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+    kernel_16_gmem<bn, bc, bk, 3, 3, 3, 6>(input, input_patch, input_smem, weight, output_smem, output+size_C, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+    kernel_16_gmem<bn, bc, bk, 3, 3, 6, 8>(input, input_patch, input_smem, weight, output_smem, output+2*size_C, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+    kernel_16_gmem<bn, bc, bk, 3, 3, 8, 9>(input, input_patch, input_smem, weight, output_smem, output+3*size_C, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+    /****************************************************/
+    /*  smem                                            */
+    /****************************************************/
+//    kernel_16_smem<bn, bc, bk, 3, 3, 0, 3>(input, input_patch, input_smem, weight, output_smem, agg_smem, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+//    kernel_16_smem<bn, bc, bk, 3, 3, 3, 6>(input, input_patch, input_smem, weight, output_smem, agg_smem, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+//    kernel_16_smem<bn, bc, bk, 3, 3, 6, 8>(input, input_patch, input_smem, weight, output_smem, agg_smem, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+//    kernel_16_smem<bn, bc, bk, 3, 3, 8, 9>(input, input_patch, input_smem, weight, output_smem, agg_smem, H_start, W_start, kernel_stride, xBase, yBase, nH, nW, B, H, W, C, K, output_H, output_W, bx, by, warp_id, lane_id, num_split, H_end, W_end);
+//    storeToGlobal_bn16<bn, bc, bk, splitH, splitW>(agg_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id);
+}
+
+void winograd2DFused_split(const float *d_A, const float *tmp_weight_buffer_fused, float *d_C, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int NH, int NW, int B, int H, int W, int C, int K, int Ho, int Wo, int pad_h, int pad_w, int num_split, cudaStream_t stream1, cudaStream_t stream2, cudaStream_t stream3, cudaStream_t stream4, int size_C) {
+    const int BN=NH*NW*Bi;  //N 
+    const int bn = 32;
+    const int bc = 8;
+    const int bk = 64;
+    const int maxbytes = 67584;//16 * (bn * bc + bn * 33) * 4; // 82 KB
+//    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 0, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+//    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 3, 6>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+//    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 6, 8>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+//    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 8, 9>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    winograd2DFused_16<bn, bc, bk, 3, 3, 0, 3><<<(BN/bn)*(BK/bk), 256, maxbytes, stream1>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride, H_start, H_end, W_start, W_end, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    winograd2DFused_16<bn, bc, bk, 3, 3, 3, 6><<<(BN/bn)*(BK/bk), 256, maxbytes, stream2>>>(d_A, tmp_weight_buffer_fused, d_C+size_C, kernel_stride, H_start, H_end, W_start, W_end, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    winograd2DFused_16<bn, bc, bk, 3, 3, 6, 8><<<(BN/bn)*(BK/bk), 256, maxbytes, stream3>>>(d_A, tmp_weight_buffer_fused, d_C+2*size_C, kernel_stride, H_start, H_end, W_start, W_end, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    winograd2DFused_16<bn, bc, bk, 3, 3, 8, 9><<<(BN/bn)*(BK/bk), 256, maxbytes, stream4>>>(d_A, tmp_weight_buffer_fused, d_C+3*size_C, kernel_stride, H_start, H_end, W_start, W_end, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    
+
+
+}
+//template<unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+//__global__ void winograd2DFused(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
+//    int warp_id = threadIdx.x / 32;
+//    int lane_id = threadIdx.x % 32;
+//    int bx = blockIdx.x % (K / bk);
+//    int by = blockIdx.x / (K / bk);  //TODO: slow???
+//
+//    extern __shared__ float smem[]; // [16, bn, bk/2+1] with 1 conflict padding
+//
+//    float *input_smem = smem;
+//    float *output_smem = smem + 16 * bc * bn;
+//
+//    int yBase = 2 * (by / nW) - pad_h;
+//    int xBase = 2 * (by % nW) - pad_w;
+//    int f_x, f_y;
+//    float prefetch1[16];
+//    float *input_patch = &prefetch1[0];
+///////////////// prefetch /////////////
+//    for(int j = 0; j < (splitH + 1); j++) {
+//      for(int k = 0; k < (splitW + 1); k++) {
+//        f_y = yBase + j;
+//        f_x = xBase + k;
+//        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+//          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+//        } else {
+//          prefetch1[j * (splitW+1) + k] = float(0);
+//        }
+//      }
+//    }
+///////////////////////////////////////
+//    int count = 0;
+//    kernel3x3<bn, bc, bk, 9>(input_patch, prefetch1, input_smem, weight, output_smem, output, H_start, W_start, xBase, yBase, nH, nW, B, C, output_H, output_W, bx, by, warp_id, lane_id, num_split, count); 
+//}
+
+template<unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+__global__ void winograd2DFused_shift(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
+    int warp_id = threadIdx.x / 32;
+    int lane_id = threadIdx.x % 32;
+    int bx = blockIdx.x % (K / bk);
+    int by = blockIdx.x / (K / bk);  //TODO: slow???
+    float accu[16/8][bk] = {0};
+
+    extern __shared__ float smem[]; // [16, bn/2, bk/2+1] with 0.5 conflict padding, the last dimension is bk/4
+
+    float *input_smem = smem;
+    float *output_smem = smem;
+    float *agg_smem = smem + 16*32*32;
+//    float agg_smem[4*64*32];
+
+    int yBase = 2 * (by / nW) - pad_h;
+    int xBase = 2 * (by % nW) - pad_w;
+    int f_x, f_y;
+    float prefetch1[16];
+    float *input_patch = &prefetch1[0];
+/////////////// prefetch /////////////
+    for(int j = 0; j < (splitH + 1); j++) {
+      for(int k = 0; k < (splitW + 1); k++) {
+        f_y = yBase + j;
+        f_x = xBase + k;
+        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
         } else {
           prefetch1[j * (splitW+1) + k] = float(0);
         }
@@ -74,7 +184,8 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
               f_y = yBase + m + H_start[bz2];
               f_x = xBase + n + W_start[bz2];
               if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-                prefetch1[m * (splitH + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+//                prefetch1[m * (splitW + 1) + n] = float(0);
               } else {
                 prefetch1[m * (splitW + 1) + n] = float(0);
               }
@@ -84,7 +195,339 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
 /////////////////////////////////////
 
         float *ip = &input_smem[2 * warp_id * bc * bn];
-        const float *wp = &weight[(2 * warp_id + 16 * bz) * C * K + lane_id + i * K + bx * bk];
+        const float *wp = &weight[(2 * warp_id + kernel_stride[bz]) * C * K + lane_id + i * K + bx * bk];
+///////////// batched matmul bcbn 32x2x8 outer product//////////////
+#pragma unroll
+        for(int k = 0; k < 16/8; k++) {
+#pragma unroll
+          for(int j = 0; j < bc; j++) {
+              float wv = wp[0];
+              for(int l = 0; l < 32; l++) {
+                accu[k][l] += ip[l] * wv;
+              }
+              if (bk > 32) {
+                wp += 32; 
+                wv = wp[0];
+                for(int l = 32; l < 64; l++) {
+                  accu[k][l] += ip[l-32] * wv;
+                }
+                wp += (K - 32);
+              } else if (bk <= 32) {
+                wp += K;
+              }
+              ip += bn;
+          }
+          wp += (C - bc) * K;
+        }
+        __syncthreads();
+////////////////////////////////////////////////////////////////
+    }
+    for (int i = 0; i < bk; i += 32) {
+        //////// load wino output /////
+        unsigned int offset = by * bn * K + bx * bk;
+        for (int j = 0; j < bn; j++) {
+            output_smem[((2 * warp_id) * bn + j) * (32) + (lane_id+j)%32] = accu[0][j + i];
+            output_smem[((2 * warp_id + 1) * bn + j) * (32) + (lane_id+j)%32] = accu[1][j + i];
+        }
+//    for (int i = 0; i < bk; i += 16) {
+//        //////// load wino output /////
+//        unsigned int offset = by * bn * K + bx * bk;
+//        for (int j = 0; j < bn/2; j++) {
+//            if (i%32 <= lane_id  && lane_id <= (i + 15) % 32) {
+//                output_smem[((2 * warp_id) * bn + j) * (32 + 1) + lane_id] = accu[0][2 * j + int(i/32)*32];
+//                output_smem[((2 * warp_id) * bn + j) * (32 + 1) + 16 + lane_id] = accu[0][2 * j + 1 + int(i/32)*32];
+//                output_smem[((2 * warp_id + 1) * bn + j) * (32 + 1) + lane_id] = accu[1][2 * j + int(i/32)*32];
+//                output_smem[((2 * warp_id + 1) * bn + j) * (32 + 1) + 16 + lane_id] = accu[1][2 * j + 1 + int(i/32)*32];
+//            }
+//        }
+        __syncthreads();
+        //////// output transform //////
+//        outputWino2NormTransform2D_fused<bn, bc, bk, splitH, splitW>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i);
+        outputWino2NormTransform2D_fused2_shift<bn, bc, bk, splitH, splitW>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i, 0);
+        __syncthreads();
+    }
+    storeToGlobal_shift<bn, bc, bk, splitH, splitW>(agg_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id);
+}
+
+template<unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+__global__ void winograd2DFused_bn16(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
+    int warp_id = threadIdx.x / 32;
+    int lane_id = threadIdx.x % 32;
+    int bx = blockIdx.x % (K / bk);
+    int by = blockIdx.x / (K / bk);  //TODO: slow???
+//    float accu[16/8][bk] = {0};
+
+    extern __shared__ float smem[]; // [16, bn/2, bk/2+1] with 0.5 conflict padding, the last dimension is bk/4
+
+    float *input_smem = smem;
+    float *output_smem = smem;
+    float *agg_smem = smem + 16*16*32;
+
+    int yBase = 2 * (by / nW) - pad_h;
+    int xBase = 2 * (by % nW) - pad_w;
+    int f_x, f_y;
+    float prefetch1[16];
+    float *input_patch = &prefetch1[0];
+/////////////// prefetch /////////////
+    for(int j = 0; j < (splitH + 1); j++) {
+      for(int k = 0; k < (splitW + 1); k++) {
+        f_y = yBase + j;
+        f_x = xBase + k;
+        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+//          prefetch1[j * (splitW+1) + k] = float(0);
+        } else {
+          prefetch1[j * (splitW+1) + k] = float(0);
+        }
+      }
+    }
+/////////////////////////////////////
+    for (int split = 0; split < 9; split++) {
+    float accu[16/8][bk] = {0};
+    for (int count = C*split; count < C * (split+1); count+=bc) {
+        int bz = count / C;
+        int i = count % C;
+   
+        //////// input transform //////
+        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        __syncthreads();
+        //////////////////////////////
+
+/////////////// prefetch /////////////
+        if (count+bc < C * num_split) {
+          int bz2 = (count + bc) / C;
+          int i2 = (count + bc) % C;
+          for(int m = 0; m < (splitH + 1); m++) {
+            for(int n = 0; n < (splitW + 1); n++) {
+              f_y = yBase + m + H_start[bz2];
+              f_x = xBase + n + W_start[bz2];
+              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+//                prefetch1[m * (splitW + 1) + n] = float(0);
+              } else {
+                prefetch1[m * (splitW + 1) + n] = float(0);
+              }
+            }
+          }
+        }
+/////////////////////////////////////
+
+        float *ip = &input_smem[2 * warp_id * bc * bn];
+        const float *wp = &weight[(2 * warp_id + (splitH + 1) * (splitW + 1) * bz) * C * K + lane_id + i * K + bx * bk];
+///////////// batched matmul bcbn 32x2x8 outer product//////////////
+#pragma unroll
+        for(int k = 0; k < 16/8; k++) {
+#pragma unroll
+          for(int j = 0; j < bc; j++) {
+              float wv = wp[0];
+              for(int l = 0; l < 32; l++) {
+                accu[k][l] += ip[l] * wv;
+              }
+              if (bk > 32) {
+                wp += 32; 
+                wv = wp[0];
+                for(int l = 32; l < 64; l++) {
+                  accu[k][l] += ip[l-32] * wv;
+                }
+                wp += (K - 32);
+              } else if (bk <= 32) {
+                wp += K;
+              }
+              ip += bn;
+          }
+          wp += (C - bc) * K;
+        }
+        __syncthreads();
+////////////////////////////////////////////////////////////////
+    }
+    for (int i = 0; i < bk; i += 32) {
+        //////// load wino output /////
+        unsigned int offset = by * bn * K + bx * bk;
+        for (int j = 0; j < bn/2; j++) {
+            output_smem[((2 * warp_id) * bn/2 + j) * (32) + lane_id] = accu[0][j + i];
+            output_smem[((2 * warp_id + 1) * bn/2 + j) * (32) + lane_id] = accu[1][j + i];
+        }
+        __syncthreads();
+        //////// output transform //////
+        outputWino2NormTransform2D_fused2_bn16<bn, bc, bk, splitH, splitW>(output_smem, agg_smem, kernel_stride, H_start, W_start, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i, 0);
+        __syncthreads();
+        //////////////////////////////
+        for (int j = bn/2; j < bn; j++) {
+            output_smem[((2 * warp_id) * bn/2 + j-bn/2) * (32) + lane_id] = accu[0][j + i];
+            output_smem[((2 * warp_id + 1) * bn/2 + j-bn/2) * (32) + lane_id] = accu[1][j + i];
+        }
+        __syncthreads();
+        //////// output transform //////
+        outputWino2NormTransform2D_fused2_bn16<bn, bc, bk, splitH, splitW>(output_smem, agg_smem, kernel_stride, H_start, W_start, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i, 16);
+        __syncthreads();
+        //////////////////////////////
+    }
+    }
+    storeToGlobal_bn16<bn, bc, bk, splitH, splitW>(agg_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id);
+}
+// double output trans test
+//template<unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+//__global__ void winograd2DFused(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
+//    int warp_id = threadIdx.x / 32;
+//    int lane_id = threadIdx.x % 32;
+//    int bx = blockIdx.x % (K / bk);
+//    int by = blockIdx.x / (K / bk);  //TODO: slow???
+//    float accu[16/8][bk] = {0};
+//
+//    extern __shared__ float smem[]; // [16, bn, bk/2+1] with 1 conflict padding
+//
+//    float *input_smem = smem;
+//    float *output_smem = smem;
+//
+//    int yBase = 2 * (by / nW) - pad_h;
+//    int xBase = 2 * (by % nW) - pad_w;
+//    int f_x, f_y;
+//    float prefetch1[16];
+//    float *input_patch = &prefetch1[0];
+///////////////// prefetch /////////////
+//    for(int j = 0; j < (splitH + 1); j++) {
+//      for(int k = 0; k < (splitW + 1); k++) {
+//        f_y = yBase + j;
+//        f_x = xBase + k;
+//        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+//          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+//        } else {
+//          prefetch1[j * (splitW+1) + k] = float(0);
+//        }
+//      }
+//    }
+///////////////////////////////////////
+//    for (int count = 0; count < C * num_split; count+=bc) {
+//        int bz = count / C;
+//        int i = count % C;
+//   
+//        //////// input transform //////
+//        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+//        __syncthreads();
+//        //////////////////////////////
+//
+///////////////// prefetch /////////////
+//        if (count+bc < C * num_split) {
+//          int bz2 = (count + bc) / C;
+//          int i2 = (count + bc) % C;
+//          for(int m = 0; m < (splitH + 1); m++) {
+//            for(int n = 0; n < (splitW + 1); n++) {
+//              f_y = yBase + m + H_start[bz2];
+//              f_x = xBase + n + W_start[bz2];
+//              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+//                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+////                prefetch1[m * (splitW + 1) + n] = float(0);
+//              } else {
+//                prefetch1[m * (splitW + 1) + n] = float(0);
+//              }
+//            }
+//          }
+//        }
+///////////////////////////////////////
+//
+//        float *ip = &input_smem[2 * warp_id * bc * bn];
+//        const float *wp = &weight[(2 * warp_id + (splitH + 1) * (splitW + 1) * bz) * C * K + lane_id + i * K + bx * bk];
+/////////////// batched matmul bcbn 32x2x8 outer product//////////////
+//#pragma unroll
+//        for(int k = 0; k < 16/8; k++) {
+//#pragma unroll
+//          for(int j = 0; j < bc; j++) {
+//              float wv = wp[0];
+//              for(int l = 0; l < 32; l++) {
+//                accu[k][l] += ip[l] * wv;
+//              }
+//              if (bk > 32) {
+//                wp += 32; 
+//                wv = wp[0];
+//                for(int l = 32; l < 64; l++) {
+//                  accu[k][l] += ip[l-32] * wv;
+//                }
+//                wp += (K - 32);
+//              } else if (bk <= 32) {
+//                wp += K;
+//              }
+//              ip += bn;
+//          }
+//          wp += (C - bc) * K;
+//        }
+//        __syncthreads();
+//////////////////////////////////////////////////////////////////
+//    }
+//    for (int i = 0; i < bk; i += 32) {
+//        //////// load wino output /////
+//        unsigned int offset = by * bn * K + bx * bk;
+//        for (int j = 0; j < bn; j++) {
+//            output_smem[((2 * warp_id) * bn + j) * (32) + (lane_id+j)%32] = accu[0][j + i];
+//            output_smem[((2 * warp_id + 1) * bn + j) * (32) + (lane_id+j)%32] = accu[1][j + i];
+//        }
+//        __syncthreads();
+//        //////// output transform //////
+//        outputWino2NormTransform2D_fused<bn, bc, bk, splitH, splitW>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, 0, warp_id, lane_id, i);
+//        __syncthreads();
+//        //////////////////////////////
+//    }
+//}
+
+template<unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+__global__ void winograd2DFused(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
+    int warp_id = threadIdx.x / 32;
+    int lane_id = threadIdx.x % 32;
+    int bx = blockIdx.x % (K / bk);
+    int by = blockIdx.x / (K / bk);  //TODO: slow???
+    float accu[16/8][bk] = {0};
+
+    extern __shared__ float smem[]; // [16, bn, bk/2+1] with 1 conflict padding
+
+    float *input_smem = smem;
+    float *output_smem = smem;
+
+    int yBase = 2 * (by / nW) - pad_h;
+    int xBase = 2 * (by % nW) - pad_w;
+    int f_x, f_y;
+    float prefetch1[16];
+    float *input_patch = &prefetch1[0];
+/////////////// prefetch /////////////
+    for(int j = 0; j < (splitH + 1); j++) {
+      for(int k = 0; k < (splitW + 1); k++) {
+        f_y = yBase + j;
+        f_x = xBase + k;
+        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+        } else {
+          prefetch1[j * (splitW+1) + k] = float(0);
+        }
+      }
+    }
+/////////////////////////////////////
+    for (int count = 0; count < C * num_split; count+=bc) {
+        int bz = count / C;
+        int i = count % C;
+   
+        //////// input transform //////
+        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        __syncthreads();
+        //////////////////////////////
+
+/////////////// prefetch /////////////
+        if (count+bc < C * num_split) {
+          int bz2 = (count + bc) / C;
+          int i2 = (count + bc) % C;
+          for(int m = 0; m < (splitH + 1); m++) {
+            for(int n = 0; n < (splitW + 1); n++) {
+              f_y = yBase + m + H_start[bz2];
+              f_x = xBase + n + W_start[bz2];
+              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+              } else {
+                prefetch1[m * (splitW + 1) + n] = float(0);
+              }
+            }
+          }
+        }
+/////////////////////////////////////
+
+        float *ip = &input_smem[2 * warp_id * bc * bn];
+        const float *wp = &weight[(2 * warp_id + (splitH + 1) * (splitW + 1) * bz) * C * K + lane_id + i * K + bx * bk];
 ///////////// batched matmul bcbn 32x2x8 outer product//////////////
 #pragma unroll
         for(int k = 0; k < 16/8; k++) {
@@ -125,81 +568,6 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
         //////////////////////////////
     }
 }
-
-//template<unsigned int bn, unsigned int bc, unsigned int bk>
-//__global__ void winograd2DFused(const float *input, const float *weight, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int K, int output_H, int output_W, int pad_h, int pad_w, int num_split) {
-//    int warp_id = threadIdx.x / 32;
-//    int lane_id = threadIdx.x % 32;
-//    int bx = blockIdx.x % (K / bk);
-//    int by = blockIdx.x / (K / bk);  //TODO: slow???
-//    int tid = by * blockDim.x + threadIdx.x;
-////    int bz = tid / (B* nH * nW * C);
-//    float accu[16/8][64] = {0};
-//
-//    extern __shared__ float smem[]; // [16, bn, bk/2+1] with 1 conflict padding
-//
-//    float *input_smem = smem;
-//    float *output_smem = smem + 16 * bc * bn;
-//
-//    for (int bz = 0; bz < 1; bz++) {
-//    for (int i = 0; i < C; i+=bc) {
-//   
-//        //////// input transform //////
-//        inputNorm2WinoTransform2D_fused<bn, bc, bk>(input, input_smem, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, H, W, C, pad_h, pad_w, by, bz, warp_id, lane_id, i);
-//        __syncthreads();
-//        //////////////////////////////
-//
-//        float *ip = &input_smem[2*warp_id*bc*bn];
-//        const float *wp = &weight[2*warp_id*C*K+lane_id+i*K+bx*bk];
-/////////////// batched matmul bcbn 32x2x8 outer product//////////////
-//#pragma unroll
-//        for(int k = 0; k < 16/8; k++) {
-//#pragma unroll
-//          for(int j = 0; j < bc; j++) {
-//              float wv = wp[0];
-//              for(int l = 0; l < 32; l++) {
-//                accu[k][l] += ip[l] * wv;
-//              }
-//              wp += 32; 
-//              wv = wp[0];
-//              for(int l = 32; l < 64; l++) {
-//                accu[k][l] += ip[l-32] * wv;
-//              }
-//              wp += (K - 32);
-//              ip += bn;
-//          }
-//          wp += (C - bc) * K;
-//        }
-//        __syncthreads();
-//////////////////////////////////////////////////////////////////
-//    }
-////    for (int i = 0; i < Batch; i++) {
-////        for (int j = 0; j < 8; j++) {
-////            output[offset + i * N * K + j * K + threadIdx.x%64] = accu[i*8 + j];
-//////            output[offset + i * N * K + j * K + lane_id + 32] = accu[i*64 + j + 32];
-////        }
-////    }
-//    /////////// output transform //////////////
-////    outputWino2NormTransform2D_fused_batch16<bn, bc, bk>(accu, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, bz, warp_id, lane_id);
-//    tid = blockIdx.x * blockDim.x + threadIdx.x;
-////    bz = tid / (B* nH * nW * K);
-//    for (int i = 0; i < bk; i += bk/2) {
-//        //////// load wino output /////
-//        unsigned int offset = by * bn * K + bx * bk;
-//        for (int j = 0; j < bn; j++) {
-//            output_smem[((2 * warp_id) * bn + j) * (bk/2 + 1) + lane_id] = accu[0][j + i];
-//            output_smem[((2 * warp_id + 1) * bn + j) * (bk/2 + 1) + lane_id] = accu[1][j + i];
-//        }
-//        __syncthreads();
-//        //////// output transform //////
-//        outputWino2NormTransform2D_fused<bn, bc, bk>(output_smem, output, kernel_stride, H_start, H_end, W_start, W_end, nH, nW, B, output_H, output_W, bx, by, bz, warp_id, lane_id, i);
-//        __syncthreads();
-//        //////////////////////////////
-//    }
-//    }
-//}
-
-
 
 int main() {
     /****************************************************/
@@ -247,6 +615,7 @@ int main() {
     for (int i = 0; i < size_C; i++) {
         h_C[i] = 0;
     }
+    cudaMemcpy(d_C, h_C, mem_size_C, cudaMemcpyHostToDevice);
 #if FILTER == 3
     int H_s[] = {0}; 
     int H_e[] = {3}; 
@@ -297,7 +666,6 @@ int main() {
     cudaMemcpy(W_end_gpu, W_e, num_split*sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(kernel_stride_gpu, kernel_stride, num_split*sizeof(int), cudaMemcpyHostToDevice);
 
-    cudaDeviceSynchronize();
 #if MY == 1
     /****************************************************/
     /*  My kernel                                       */
@@ -314,6 +682,7 @@ int main() {
 
     float* tmp_weight_buffer_fused;
     cudaMalloc((void**) &tmp_weight_buffer_fused, Batch*BC*BK*sizeof(float));
+    cudaDeviceSynchronize();
     // create and start timer
     cudaEventCreate(&start);
     cudaEventRecord(start, NULL); 
@@ -326,7 +695,7 @@ int main() {
     const int bn = 32;
     const int bc = 8;
     const int bk = 64;
-    const int maxbytes = 16 * (bn * bc + bn * 33) * 4; // 82 KB
+    const int maxbytes = 67584;//16 * (bn * bc + bn * 33) * 4; // 82 KB
     cudaFuncSetAttribute(winograd2DFused<bn, bc, bk, 3, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
     winograd2DFused<bn, bc, bk, 3, 3><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
     
@@ -345,6 +714,276 @@ int main() {
     }
     cout << endl;
     cudaDeviceSynchronize();
+#endif
+
+#if SHIFT == 1
+    /****************************************************/
+    /*  My kernel                                       */
+    /****************************************************/
+
+    // copy host memory to device
+    cudaMemcpy(d_A, h_A, mem_size_A,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, mem_size_B,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_C, h_C, mem_size_C,
+                              cudaMemcpyHostToDevice);
+
+
+    float* tmp_weight_buffer_fused;
+    cudaMalloc((void**) &tmp_weight_buffer_fused, Batch*BC*BK*sizeof(float));
+    cudaDeviceSynchronize();
+    // create and start timer
+    cudaEventCreate(&start);
+    cudaEventRecord(start, NULL); 
+    // setup execution parameters
+    // naive implementation
+    dim3 bDim2(BK, 1, 1);
+    dim3 gDim2(BC, num_split, 1);
+    wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
+
+    const int bn = 32;
+    const int bc = 8;
+    const int bk = 64;
+    const int maxbytes = 98304;//16 * (bn * bc + bn * 33) * 4; // 82 KB
+    cudaFuncSetAttribute(winograd2DFused_shift<bn, bc, bk, 3, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    winograd2DFused_shift<bn, bc, bk, 3, 3><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    
+    // stop and destroy timer
+    cudaEventCreate(&stop);
+    cudaEventRecord(stop, NULL);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
+    printf("SHIFT\n");
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
+    // copy result from device to host
+    cudaMemcpy(h_C, d_C, mem_size_C,
+                              cudaMemcpyDeviceToHost);
+    for(int i = 0; i < 10; i++) {
+        cout << h_C[i] << " "; 
+    }
+    cout << endl;
+    cudaDeviceSynchronize();
+#endif
+
+#if BN16 == 1
+    /****************************************************/
+    /*  My kernel                                       */
+    /****************************************************/
+
+    // copy host memory to device
+    cudaMemcpy(d_A, h_A, mem_size_A,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, mem_size_B,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_C, h_C, mem_size_C,
+                              cudaMemcpyHostToDevice);
+
+
+    #if SHIFT == 0
+    float* tmp_weight_buffer_fused;
+    cudaMalloc((void**) &tmp_weight_buffer_fused, Batch*BC*BK*sizeof(float));
+    dim3 bDim2(BK, 1, 1);
+    dim3 gDim2(BC, num_split, 1);
+    const int bn = 32;
+    const int bc = 8;
+    const int bk = 64;
+    const int maxbytes = 66048;//16 * (bn * bc + bn * 33) * 4; // 82 KB
+    #endif
+    cudaDeviceSynchronize();
+    // create and start timer
+    cudaEventCreate(&start);
+    cudaEventRecord(start, NULL); 
+    // setup execution parameters
+    // naive implementation
+    wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
+
+    cudaFuncSetAttribute(winograd2DFused_bn16<bn, bc, bk, 3, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    winograd2DFused_bn16<bn, bc, bk, 3, 3><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    
+    // stop and destroy timer
+    cudaEventCreate(&stop);
+    cudaEventRecord(stop, NULL);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
+    printf("BN16\n");
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / msecTotal/ 1e+6);
+    // copy result from device to host
+    cudaMemcpy(h_C, d_C, mem_size_C,
+                              cudaMemcpyDeviceToHost);
+    for(int i = 0; i < 10; i++) {
+        cout << h_C[i] << " "; 
+    }
+    cout << endl;
+    cudaDeviceSynchronize();
+#endif
+
+#if KERNEL == 1
+    /****************************************************/
+    /*  My kernel                                       */
+    /****************************************************/
+
+    // copy host memory to device
+    cudaMemcpy(d_A, h_A, mem_size_A,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, mem_size_B,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_C, h_C, mem_size_C,
+                              cudaMemcpyHostToDevice);
+
+
+    float* tmp_output_buffer;
+    cudaMalloc((void**) &tmp_output_buffer, 4*size_C*sizeof(float));
+    #if SHIFT == 0 and BN16 == 0
+    float* tmp_weight_buffer_fused;
+    cudaMalloc((void**) &tmp_weight_buffer_fused, Batch*BC*BK*sizeof(float));
+    dim3 bDim2(BK, 1, 1);
+    dim3 gDim2(BC, num_split, 1);
+    const int bn = 32;
+    const int bc = 8;
+    const int bk = 64;
+    const int maxbytes = 66048;//16 * (bn * bc + bn * 33) * 4; // 82 KB
+    #endif
+    // warmup
+    cudaFuncSetAttribute(winograd2DFused_kernel<bn, bc, bk, 3, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    for (int i = 0; i < 50; i++) {
+        wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
+        winograd2DFused_kernel<bn, bc, bk, 3, 3><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, tmp_output_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split, size_C);
+        agg <<<(size_C + 256 - 1) / 256, 256>>> (tmp_output_buffer, d_C, size_C);
+    }
+    for (int i = 0; i < size_C; i++) {
+        h_C[i] = 0;
+    }
+    cudaMemcpy(d_C, h_C, mem_size_C, cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
+    // create and start timer
+    cudaEventCreate(&start);
+    cudaEventRecord(start, NULL); 
+    // setup execution parameters
+    for (int i = 0; i < 100; i++) {
+        wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
+
+        winograd2DFused_kernel<bn, bc, bk, 3, 3><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, tmp_output_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split, size_C);
+        agg <<<(size_C + 256 - 1) / 256, 256>>> (tmp_output_buffer, d_C, size_C);
+    }
+    
+    // stop and destroy timer
+    cudaEventCreate(&stop);
+    cudaEventRecord(stop, NULL);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
+    printf("BN16\n");
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / (msecTotal/100)/ 1e+6);
+    // copy result from device to host
+    cudaMemcpy(h_C, d_C, mem_size_C,
+                              cudaMemcpyDeviceToHost);
+    for(int i = 0; i < 10; i++) {
+        cout << h_C[i] << " "; 
+    }
+    cout << endl;
+    cudaDeviceSynchronize();
+#endif
+
+#if SPLIT == 1
+    /****************************************************/
+    /*  My kernel                                       */
+    /****************************************************/
+
+    // copy host memory to device
+    cudaMemcpy(d_A, h_A, mem_size_A,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, mem_size_B,
+                              cudaMemcpyHostToDevice);
+    cudaMemcpy(d_C, h_C, mem_size_C,
+                              cudaMemcpyHostToDevice);
+
+
+    float* tmp_weight_buffer_fused;
+    cudaMalloc((void**) &tmp_weight_buffer_fused, Batch*BC*BK*sizeof(float));
+    float* tmp_output_buffer;
+    cudaMalloc((void**) &tmp_output_buffer, 4*size_C*sizeof(float));
+    const int bn = 32;
+    const int bc = 8;
+    const int bk = 64;
+
+    const int maxbytes = 67584;//16 * (bn * bc + bn * 33) * 4; // 82 KB
+    cudaStream_t stream1, stream2, stream3, stream4 ;
+    cudaStreamCreate(&stream1);
+    cudaStreamCreate(&stream2);
+    cudaStreamCreate(&stream3);
+    cudaStreamCreate(&stream4);
+    // warmup
+    dim3 bDim2(BK, 1, 1);
+    dim3 gDim2(BC, num_split, 1);
+    for (int i = 0; i < 50; i++) {
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 0, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 3, 6>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 6, 8>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 8, 9>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+        wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
+        winograd2DFused_split(d_A, tmp_weight_buffer_fused, tmp_output_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split, stream1, stream2, stream3, stream4, size_C);
+        agg <<<(size_C + 256 - 1) / 256, 256>>> (tmp_output_buffer, d_C, size_C);
+    }
+    // create and start timer
+    for (int i = 0; i < size_C; i++) {
+        h_C[i] = 0;
+    }
+    cudaMemcpy(d_C, h_C, mem_size_C, cudaMemcpyHostToDevice);
+
+    cudaDeviceSynchronize();
+    cudaEventCreate(&start);
+    cudaEventRecord(start, NULL); 
+    // setup execution parameters
+    for (int i = 0; i < 100; i++) {
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 0, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 3, 6>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 6, 8>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    cudaFuncSetAttribute(winograd2DFused_16<bn, bc, bk, 3, 3, 8, 9>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+//        cudaMemcpy(d_C, h_C, mem_size_C, cudaMemcpyHostToDevice);
+        wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
+        winograd2DFused_split(d_A, tmp_weight_buffer_fused, tmp_output_buffer, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split, stream1, stream2, stream3, stream4, size_C);
+        agg <<<(size_C + 256 - 1) / 256, 256>>> (tmp_output_buffer, d_C, size_C);
+    }
+    
+    // stop and destroy timer
+    cudaEventCreate(&stop);
+    cudaEventRecord(stop, NULL);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
+    printf("My\n");
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, flop / (msecTotal / 100) / 1e+6);
+    // copy result from device to host
+    cudaMemcpy(h_C, d_C, mem_size_C,
+                              cudaMemcpyDeviceToHost);
+    for(int i = 0; i < 10; i++) {
+        cout << h_C[i] << " "; 
+    }
+    cout << endl;
+    cudaDeviceSynchronize();
+#endif
+
+#if ADD == 1
+    size_C = BK * Ho * Wo * Bi;
+
+    float* tmp_buffer;
+    cudaMalloc((void**) &tmp_buffer, 4*size_C*sizeof(float));
+    float* tmp_buffer2;
+    cudaMalloc((void**) &tmp_buffer2, size_C*sizeof(float));
+    // create and start timer
+    cudaEventCreate(&start);
+    cudaEventRecord(start, NULL); 
+    // setup execution parameters
+    // naive implementation
+    cout << size_C << endl;
+    agg <<<(size_C + 256 - 1) / 256, 256>>> (tmp_buffer, tmp_buffer2, size_C);
+
+    // stop and destroy timer
+    cudaEventCreate(&stop);
+    cudaEventRecord(stop, NULL);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&msecTotal, start, stop);
+    printf("My add\n");
+    printf("Processing time: %f (ms), GFLOPS: %f \n", msecTotal, float(size_C)*5 / msecTotal/ 1e+6);
 #endif
 
 #if CHECK_RESULT == 1
