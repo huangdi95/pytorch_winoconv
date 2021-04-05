@@ -6,7 +6,7 @@
 //#if GOOFLE_CUDA
 //#define EIGEN_USE_GPU
 #include <cublas_v2.h>
-#include "calculation_kernels2d.cu"
+#include "../calculation_kernels2d.cu"
 #include <stdio.h>
 #include <iostream>
 #include <cuda.h>
