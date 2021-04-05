@@ -18,7 +18,7 @@ __device__ void inputNorm2WinoTransform2D_fused(float *input_patch, float *input
 }
 
 template <int splitH, int splitW>
-__device__ void inputNorm2WinoTransform2D_fused(float *norm_input, float *input_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int by, int bz, int warp_id, int lane_id, int c_i, int h_start, int w_start) {
+__device__ void inputNorm2WinoTransform2D_fused_back(float *norm_input, float *input_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int H, int W, int C, int pad_h, int pad_w, int by, int bz, int warp_id, int lane_id, int c_i, int h_start, int w_start) {
 
  //   int h_end = H_end[bz];
  //   int h_start = H_start[bz];
@@ -58,7 +58,139 @@ __device__ void inputNorm2WinoTransform2D_fused(float *norm_input, float *input_
       input_smem[i * 256 + warp_id * 32 + lane_id] = float(trans_input_patch[i]);
     }
 }
+template <unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+__device__ void storeToGlobal_shift(float *agg_smem, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int output_H, int output_W, int bx, int by, int bz, int warp_id, int lane_id) {
+    int h = by / nW; 
+    int w = by % nW;
 
+    for (int j = 0; j < 64; j += blockDim.x/32) {
+    unsigned int offset_k = bx * bk + warp_id + j;
+    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[0 * bn * bk  + (warp_id + j) * bn + lane_id];
+    if(output_W % 2 == 0 || w != nW - 1)
+    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[1 * bn * bk  + (warp_id + j) * bn + lane_id];
+    if(output_H % 2 == 0 || h != nH - 1)
+    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[2 * bn * bk  + (warp_id + j) * bn + lane_id];
+    if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
+    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[3 * bn * bk  + (warp_id + j) * bn + lane_id];
+
+//    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[0 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+//    if(output_W % 2 == 0 || w != nW - 1)
+//    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[1 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+//    if(output_H % 2 == 0 || h != nH - 1)
+//    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[2 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+//    if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
+//    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[3 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+    }
+}
+
+template <unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+__device__ void storeToGlobal_bn16(float *agg_smem, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int output_H, int output_W, int bx, int by, int bz, int warp_id, int lane_id) {
+    int h = by / nW; 
+    int w = by % nW;
+
+    for (int j = 0; j < 64; j += blockDim.x/32) {
+    unsigned int offset_k = bx * bk + warp_id + j;
+//    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[0 * bn * bk  + (warp_id + j) * bn + lane_id];
+//    if(output_W % 2 == 0 || w != nW - 1)
+//    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[1 * bn * bk  + (warp_id + j) * bn + lane_id];
+//    if(output_H % 2 == 0 || h != nH - 1)
+//    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[2 * bn * bk  + (warp_id + j) * bn + lane_id];
+//    if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
+//    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[3 * bn * bk  + (warp_id + j) * bn + lane_id];
+
+    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[0 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+    if(output_W % 2 == 0 || w != nW - 1)
+    output[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[1 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+    if(output_H % 2 == 0 || h != nH - 1)
+    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + lane_id] = agg_smem[2 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+    if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
+    output[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + lane_id] = agg_smem[3 * bn * (bk + 1)  + lane_id * (bk + 1) + warp_id + j];
+    }
+}
+template <unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+__device__ void outputWino2NormTransform2D_fused2_shift(float *output_smem, float *agg_smem, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int output_H, int output_W, int bx, int by, int bz, int warp_id, int lane_id, int k_i, int n_i) {
+
+    int h = by / nW; 
+    int w = by % nW;
+    for (int j = 0; j < 32; j += blockDim.x/32) {
+
+        float product_patch[16] = {0};
+        for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
+            product_patch[i] = output_smem[(i * bn + lane_id) * (32) + (warp_id + j + lane_id) % 32];
+        }
+        //TODO: warp optimize?
+//    for (int j = 0; j < 32; j += blockDim.x/32) {
+//
+//        float product_patch[16] = {0};
+//        for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
+//            product_patch[i] = output_smem[(i * bn + lane_id) * (32 + 1) + warp_id + j];
+//        }
+//        //TODO: warp optimize?
+//    for (int j = 0; j < 16; j += blockDim.x/32) {
+//
+//        float product_patch[16] = {0};
+//        for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
+//            product_patch[i] = output_smem[(i * bn + lane_id/2) * (32 + 1) + warp_id + j + 16 * (lane_id % 2)];
+//        }
+//        //TODO: warp optimize?
+    
+        float output_patch[4] = {0};
+
+        outputWino2NormCalculation2D_fused(product_patch, output_patch, splitH, splitW);
+
+        unsigned int offset_k = bx * bk + k_i + warp_id + j;
+
+        agg_smem[0 * bn * bk + (warp_id + j + k_i) * bn + lane_id] += output_patch[0];
+        agg_smem[1 * bn * bk + (warp_id + j + k_i) * bn + lane_id] += output_patch[1];
+        agg_smem[2 * bn * bk + (warp_id + j + k_i) * bn + lane_id] += output_patch[2];
+        agg_smem[3 * bn * bk + (warp_id + j + k_i) * bn + lane_id] += output_patch[3];
+
+//        agg_smem[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 0)) * B + lane_id] = 1;//output_patch[0];
+//        if(output_W % 2 == 0 || w != nW - 1)
+//          agg_smem[((offset_k * output_H + (2 * h + 0)) * output_W + (2 * w + 1)) * B + lane_id] = 1;//output_patch[1];
+//        if(output_H % 2 == 0 || h != nH - 1)
+//          agg_smem[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 0)) * B + lane_id] = 1;//output_patch[2];
+//        if((output_W % 2 == 0 || w != nW - 1) && (output_H % 2 == 0 || h != nH - 1))
+//          agg_smem[((offset_k * output_H + (2 * h + 1)) * output_W + (2 * w + 1)) * B + lane_id] = 1;//output_patch[3];
+    }
+}
+template <unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
+__device__ void outputWino2NormTransform2D_fused2_bn16(float *output_smem, float *agg_smem, const int *kernel_stride, const int *H_start, const int *W_start, int nH, int nW, int B, int output_H, int output_W, int bx, int by, int bz, int warp_id, int lane_id, int k_i, int n_i) {
+
+    for (int j = 0; j < 16; j += blockDim.x/32) {
+
+        float product_patch[16] = {0};
+        for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
+            product_patch[i] = output_smem[(i * bn/2 + warp_id + j) * (32) + lane_id];
+        }
+        //TODO: warp optimize?
+//    for (int j = 0; j < 32; j += blockDim.x/32) {
+//
+//        float product_patch[16] = {0};
+//        for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
+//            product_patch[i] = output_smem[(i * bn + lane_id) * (32 + 1) + warp_id + j];
+//        }
+//        //TODO: warp optimize?
+//    for (int j = 0; j < 16; j += blockDim.x/32) {
+//
+//        float product_patch[16] = {0};
+//        for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
+//            product_patch[i] = output_smem[(i * bn + lane_id/2) * (32 + 1) + warp_id + j + 16 * (lane_id % 2)];
+//        }
+//        //TODO: warp optimize?
+    
+        float output_patch[4] = {0};
+
+        outputWino2NormCalculation2D_fused(product_patch, output_patch, splitH, splitW);
+
+        unsigned int offset_k = bx * bk + k_i + warp_id + j;
+
+        agg_smem[0 * bn * (bk + 1)  + (n_i + warp_id + j) * (bk + 1) + lane_id + k_i] += output_patch[0];
+        agg_smem[1 * bn * (bk + 1)  + (n_i + warp_id + j) * (bk + 1) + lane_id + k_i] += output_patch[1];
+        agg_smem[2 * bn * (bk + 1)  + (n_i + warp_id + j) * (bk + 1) + lane_id + k_i] += output_patch[2];
+        agg_smem[3 * bn * (bk + 1)  + (n_i + warp_id + j) * (bk + 1) + lane_id + k_i] += output_patch[3];
+    }
+}
 template <unsigned int bn, unsigned int bc, unsigned int bk, int splitH, int splitW>
 __device__ void outputWino2NormTransform2D_fused(float *output_smem, float *output, const int *kernel_stride, const int *H_start, const int *H_end, const int *W_start, const int *W_end, int nH, int nW, int B, int output_H, int output_W, int bx, int by, int bz, int warp_id, int lane_id, int k_i) {
     int h = by / nW; 
@@ -70,6 +202,7 @@ __device__ void outputWino2NormTransform2D_fused(float *output_smem, float *outp
         for (int i = 0; i < (splitH+1)*(splitW+1); i++) {
             product_patch[i] = output_smem[(i * bn + lane_id) * (32 + 1) + warp_id + j];
         }
+        //TODO: warp optimize?
     
         float output_patch[4] = {0};
 
