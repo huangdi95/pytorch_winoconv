@@ -6,7 +6,7 @@
 #include "composer_kernels.cu"
 //time measure
 #include <chrono>
-#define CHECK_RESULT 0
+#define CHECK_RESULT 1
 #define MY 1
 //#define BN 32
 //#define BC 8
@@ -151,8 +151,8 @@ int main() {
     const int bc = 8;
     const int bk = 64;
     const int maxbytes = (FILTERH + 1) * (FILTERW + 1) * (bn * bc + bn * 33) * 4; // 82 KB
-    cudaFuncSetAttribute(winograd2DFused_8<bn, bc, bk, FILTERH, FILTERW>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
-    winograd2DFused_8<bn, bc, bk, FILTERH, FILTERW><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
+    cudaFuncSetAttribute(winograd2DFused_8<bn, bc, bk, FILTERH, FILTERW, 0, 1>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    winograd2DFused_8<bn, bc, bk, FILTERH, FILTERW, 0, 1><<<(BN/bn)*(BK/bk), 256, maxbytes>>>(d_A, tmp_weight_buffer_fused, d_C, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, NH, NW, Bi, Hi, Wi, BC, BK, Ho, Wo, PH, PW, num_split);
     
     // stop and destroy timer
     cudaEventCreate(&stop);
