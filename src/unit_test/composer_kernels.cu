@@ -11,7 +11,13 @@ __device__ __forceinline__ void kernel_16_gmem(const float *input, float *input_
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        if (bc == 8) {
+          inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        } else {
+          if (warp_id < bc){
+            inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+          }
+        }
         __syncthreads();
         //////////////////////////////
 
@@ -19,14 +25,30 @@ __device__ __forceinline__ void kernel_16_gmem(const float *input, float *input_
         if (count+bc < C * num_split) {
           int bz2 = (count + bc) / C;
           int i2 = (count + bc) % C;
-          for(int m = 0; m < (splitH + 1); m++) {
-            for(int n = 0; n < (splitW + 1); n++) {
-              int f_y = yBase + m + H_start[bz2];
-              int f_x = xBase + n + W_start[bz2];
-              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-                input_patch[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
-              } else {
-                input_patch[m * (splitW + 1) + n] = float(0);
+          if (bc == 8) {
+            for(int m = 0; m < (splitH + 1); m++) {
+              for(int n = 0; n < (splitW + 1); n++) {
+                int f_y = yBase + m + H_start[bz2];
+                int f_x = xBase + n + W_start[bz2];
+                if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                  input_patch[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                } else {
+                  input_patch[m * (splitW + 1) + n] = float(0);
+                }
+              }
+            }
+          } else {
+            if (warp_id < bc){
+              for(int m = 0; m < (splitH + 1); m++) {
+                for(int n = 0; n < (splitW + 1); n++) {
+                  int f_y = yBase + m + H_start[bz2];
+                  int f_x = xBase + n + W_start[bz2];
+                  if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                    input_patch[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                  } else {
+                    input_patch[m * (splitW + 1) + n] = float(0);
+                  }
+                }
               }
             }
           }
@@ -84,7 +106,13 @@ __device__ __forceinline__ void kernel_16_smem(const float *input, float *input_
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        if (bc == 8) {
+          inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        } else {
+          if (warp_id < bc){
+            inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+          }
+        }
         __syncthreads();
         //////////////////////////////
 
@@ -92,15 +120,30 @@ __device__ __forceinline__ void kernel_16_smem(const float *input, float *input_
         if (count+bc < C * num_split) {
           int bz2 = (count + bc) / C;
           int i2 = (count + bc) % C;
-          for(int m = 0; m < (splitH + 1); m++) {
-            for(int n = 0; n < (splitW + 1); n++) {
-              int f_y = yBase + m + H_start[bz2];
-              int f_x = xBase + n + W_start[bz2];
-              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-                input_patch[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
-//                input_patch[m * (splitW + 1) + n] = float(0);
-              } else {
-                input_patch[m * (splitW + 1) + n] = float(0);
+          if (bc == 8) {
+            for(int m = 0; m < (splitH + 1); m++) {
+              for(int n = 0; n < (splitW + 1); n++) {
+                int f_y = yBase + m + H_start[bz2];
+                int f_x = xBase + n + W_start[bz2];
+                if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                  input_patch[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                } else {
+                  input_patch[m * (splitW + 1) + n] = float(0);
+                }
+              }
+            }
+          } else {
+            if (warp_id < bc){
+              for(int m = 0; m < (splitH + 1); m++) {
+                for(int n = 0; n < (splitW + 1); n++) {
+                  int f_y = yBase + m + H_start[bz2];
+                  int f_x = xBase + n + W_start[bz2];
+                  if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                    input_patch[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                  } else {
+                    input_patch[m * (splitW + 1) + n] = float(0);
+                  }
+                }
               }
             }
           }
@@ -179,14 +222,30 @@ __global__ void winograd2DFused_16(const float *input, const float *weight, floa
     float prefetch1[16];
     float *input_patch = &prefetch1[0];
 /////////////// prefetch /////////////
-    for(int j = 0; j < (splitH + 1); j++) {
-      for(int k = 0; k < (splitW + 1); k++) {
-        f_y = yBase + j + H_start[bz];
-        f_x = xBase + k + W_start[bz];
-        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
-        } else {
-          prefetch1[j * (splitW+1) + k] = float(0);
+    if (bc == 8) {
+      for(int j = 0; j < (splitH + 1); j++) {
+        for(int k = 0; k < (splitW + 1); k++) {
+          f_y = yBase + j + H_start[bz];
+          f_x = xBase + k + W_start[bz];
+          if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+            prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+          } else {
+            prefetch1[j * (splitW+1) + k] = float(0);
+          }
+        }
+      }
+    } else {
+      if (warp_id < bc){
+        for(int j = 0; j < (splitH + 1); j++) {
+          for(int k = 0; k < (splitW + 1); k++) {
+            f_y = yBase + j;
+            f_x = xBase + k;
+            if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+              prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+            } else {
+              prefetch1[j * (splitW+1) + k] = float(0);
+            }
+          }
         }
       }
     }
@@ -196,7 +255,13 @@ __global__ void winograd2DFused_16(const float *input, const float *weight, floa
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        if (bc == 8) {
+          inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        } else {
+          if (warp_id < bc){
+            inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+          }
+        }
         __syncthreads();
         //////////////////////////////
 
@@ -204,14 +269,30 @@ __global__ void winograd2DFused_16(const float *input, const float *weight, floa
         if (count+bc < C * loop_e) {
           int bz2 = (count + bc) / C;
           int i2 = (count + bc) % C;
-          for(int m = 0; m < (splitH + 1); m++) {
-            for(int n = 0; n < (splitW + 1); n++) {
-              f_y = yBase + m + H_start[bz2];
-              f_x = xBase + n + W_start[bz2];
-              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
-              } else {
-                prefetch1[m * (splitW + 1) + n] = float(0);
+          if (bc == 8) {
+            for(int m = 0; m < (splitH + 1); m++) {
+              for(int n = 0; n < (splitW + 1); n++) {
+                f_y = yBase + m + H_start[bz2];
+                f_x = xBase + n + W_start[bz2];
+                if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                  prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                } else {
+                  prefetch1[m * (splitW + 1) + n] = float(0);
+                }
+              }
+            }
+          } else {
+            if (warp_id < bc){
+              for(int m = 0; m < (splitH + 1); m++) {
+                for(int n = 0; n < (splitW + 1); n++) {
+                  f_y = yBase + m + H_start[bz2];
+                  f_x = xBase + n + W_start[bz2];
+                  if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                    prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                  } else {
+                    prefetch1[m * (splitW + 1) + n] = float(0);
+                  }
+                }
               }
             }
           }
@@ -282,14 +363,30 @@ __global__ void winograd2DFused_8(const float *input, const float *weight, float
     float prefetch1[16];
     float *input_patch = &prefetch1[0];
 /////////////// prefetch /////////////
-    for(int j = 0; j < (splitH + 1); j++) {
-      for(int k = 0; k < (splitW + 1); k++) {
-        f_y = yBase + j + H_start[bz];
-        f_x = xBase + k + W_start[bz];
-        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-          prefetch1[j * (splitW + 1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
-        } else {
-          prefetch1[j * (splitW + 1) + k] = float(0);
+    if (bc == 8) {
+      for(int j = 0; j < (splitH + 1); j++) {
+        for(int k = 0; k < (splitW + 1); k++) {
+          f_y = yBase + j + H_start[bz];
+          f_x = xBase + k + W_start[bz];
+          if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+            prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+          } else {
+            prefetch1[j * (splitW+1) + k] = float(0);
+          }
+        }
+      }
+    } else {
+      if (warp_id < bc){
+        for(int j = 0; j < (splitH + 1); j++) {
+          for(int k = 0; k < (splitW + 1); k++) {
+            f_y = yBase + j;
+            f_x = xBase + k;
+            if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+              prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+            } else {
+              prefetch1[j * (splitW+1) + k] = float(0);
+            }
+          }
         }
       }
     }
@@ -299,7 +396,13 @@ __global__ void winograd2DFused_8(const float *input, const float *weight, float
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        if (bc == 8) {
+          inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        } else {
+          if (warp_id < bc){
+            inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+          }
+        }
         __syncthreads();
         //////////////////////////////
 
@@ -307,14 +410,30 @@ __global__ void winograd2DFused_8(const float *input, const float *weight, float
         if (count+bc < C * loop_e) {
           int bz2 = (count + bc) / C;
           int i2 = (count + bc) % C;
-          for(int m = 0; m < (splitH + 1); m++) {
-            for(int n = 0; n < (splitW + 1); n++) {
-              f_y = yBase + m + H_start[bz2];
-              f_x = xBase + n + W_start[bz2];
-              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
-              } else {
-                prefetch1[m * (splitW + 1) + n] = float(0);
+          if (bc == 8) {
+            for(int m = 0; m < (splitH + 1); m++) {
+              for(int n = 0; n < (splitW + 1); n++) {
+                f_y = yBase + m + H_start[bz2];
+                f_x = xBase + n + W_start[bz2];
+                if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                  prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                } else {
+                  prefetch1[m * (splitW + 1) + n] = float(0);
+                }
+              }
+            }
+          } else {
+            if (warp_id < bc){
+              for(int m = 0; m < (splitH + 1); m++) {
+                for(int n = 0; n < (splitW + 1); n++) {
+                  f_y = yBase + m + H_start[bz2];
+                  f_x = xBase + n + W_start[bz2];
+                  if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                    prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                  } else {
+                    prefetch1[m * (splitW + 1) + n] = float(0);
+                  }
+                }
               }
             }
           }
@@ -381,14 +500,30 @@ __global__ void winograd2DFused_4(const float *input, const float *weight, float
     float prefetch1[16];
     float *input_patch = &prefetch1[0];
 /////////////// prefetch /////////////
-    for(int j = 0; j < (splitH + 1); j++) {
-      for(int k = 0; k < (splitW + 1); k++) {
-        f_y = yBase + j + H_start[bz];
-        f_x = xBase + k + W_start[bz];
-        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-          prefetch1[j * (splitW + 1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
-        } else {
-          prefetch1[j * (splitW + 1) + k] = float(0);
+    if (bc == 8) {
+      for(int j = 0; j < (splitH + 1); j++) {
+        for(int k = 0; k < (splitW + 1); k++) {
+          f_y = yBase + j + H_start[bz];
+          f_x = xBase + k + W_start[bz];
+          if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+            prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+          } else {
+            prefetch1[j * (splitW+1) + k] = float(0);
+          }
+        }
+      }
+    } else {
+      if (warp_id < bc){
+        for(int j = 0; j < (splitH + 1); j++) {
+          for(int k = 0; k < (splitW + 1); k++) {
+            f_y = yBase + j;
+            f_x = xBase + k;
+            if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+              prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+            } else {
+              prefetch1[j * (splitW+1) + k] = float(0);
+            }
+          }
         }
       }
     }
@@ -398,7 +533,13 @@ __global__ void winograd2DFused_4(const float *input, const float *weight, float
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        if (bc == 8) {
+          inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        } else {
+          if (warp_id < bc){
+            inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+          }
+        }
         __syncthreads();
         //////////////////////////////
 
@@ -406,14 +547,30 @@ __global__ void winograd2DFused_4(const float *input, const float *weight, float
         if (count+bc < C * loop_e) {
           int bz2 = (count + bc) / C;
           int i2 = (count + bc) % C;
-          for(int m = 0; m < (splitH + 1); m++) {
-            for(int n = 0; n < (splitW + 1); n++) {
-              f_y = yBase + m + H_start[bz2];
-              f_x = xBase + n + W_start[bz2];
-              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
-              } else {
-                prefetch1[m * (splitW + 1) + n] = float(0);
+          if (bc == 8) {
+            for(int m = 0; m < (splitH + 1); m++) {
+              for(int n = 0; n < (splitW + 1); n++) {
+                f_y = yBase + m + H_start[bz2];
+                f_x = xBase + n + W_start[bz2];
+                if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                  prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                } else {
+                  prefetch1[m * (splitW + 1) + n] = float(0);
+                }
+              }
+            }
+          } else {
+            if (warp_id < bc){
+              for(int m = 0; m < (splitH + 1); m++) {
+                for(int n = 0; n < (splitW + 1); n++) {
+                  f_y = yBase + m + H_start[bz2];
+                  f_x = xBase + n + W_start[bz2];
+                  if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                    prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                  } else {
+                    prefetch1[m * (splitW + 1) + n] = float(0);
+                  }
+                }
               }
             }
           }
