@@ -4,7 +4,7 @@
     > Created Time: Sun 28 Mar 2021 08:18:17 PM CST
  ************************************************************************/
 #include "calculation_kernels2d.cu"
-template <int splitH, int splitW>
+template <unsigned int bn, unsigned int bc, int splitH, int splitW>
 __device__ void inputNorm2WinoTransform2D_fused(float *input_patch, float *input_smem, int warp_id, int lane_id) {
 
     float trans_input_patch[16];
@@ -13,7 +13,7 @@ __device__ void inputNorm2WinoTransform2D_fused(float *input_patch, float *input
 
 //TODO: #pragma unroll
     for(int i = 0; i < (splitH + 1) * (splitW + 1); i++) {
-      input_smem[i * 256 + warp_id * 32 + lane_id] = float(trans_input_patch[i]);
+      input_smem[i * bc * bn + warp_id * 32 + lane_id] = float(trans_input_patch[i]);
     }
 }
 
