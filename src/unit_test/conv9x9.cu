@@ -7,11 +7,11 @@
 //time measure
 #include <chrono>
 #define CHECK_RESULT 0
-#define MY 0
+#define MY 1
 #define KERNEL 0
 #define SHIFT 0
 #define BN16 0
-#define SPLIT 1
+#define SPLIT 0
 #define ADD 0
 //#define BN 32
 //#define BC 8
@@ -21,7 +21,7 @@
 #define Bi 32    //input batch
 #define Hi 112  //input h
 #define Wi 256 //input w
-#define BC 32 //input c
+#define BC 7*3 //input c
 #define BK 64   //output c
 #define PH 1    //pad h
 #define PW 1    //pad w
@@ -171,7 +171,7 @@ __global__ void winograd2DFused_shift(const float *input, const float *weight, f
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
@@ -289,7 +289,7 @@ __global__ void winograd2DFused_bn16(const float *input, const float *weight, fl
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
@@ -402,7 +402,7 @@ __global__ void winograd2DFused_bn16(const float *input, const float *weight, fl
 //        int i = count % C;
 //   
 //        //////// input transform //////
-//        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+//        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
 //        __syncthreads();
 //        //////////////////////////////
 //
@@ -487,14 +487,30 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
     float prefetch1[16];
     float *input_patch = &prefetch1[0];
 /////////////// prefetch /////////////
-    for(int j = 0; j < (splitH + 1); j++) {
-      for(int k = 0; k < (splitW + 1); k++) {
-        f_y = yBase + j;
-        f_x = xBase + k;
-        if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-          prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
-        } else {
-          prefetch1[j * (splitW+1) + k] = float(0);
+    if (bc == 8) {
+      for(int j = 0; j < (splitH + 1); j++) {
+        for(int k = 0; k < (splitW + 1); k++) {
+          f_y = yBase + j;
+          f_x = xBase + k;
+          if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+            prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+          } else {
+            prefetch1[j * (splitW+1) + k] = float(0);
+          }
+        }
+      }
+    } else {
+      if (warp_id < bc){
+        for(int j = 0; j < (splitH + 1); j++) {
+          for(int k = 0; k < (splitW + 1); k++) {
+            f_y = yBase + j;
+            f_x = xBase + k;
+            if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+              prefetch1[j * (splitW+1) + k] = input[((((warp_id + 0) * H + f_y) * W + f_x)) * B + lane_id];
+            } else {
+              prefetch1[j * (splitW+1) + k] = float(0);
+            }
+          }
         }
       }
     }
@@ -504,7 +520,13 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        if (bc == 8) {
+          inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        } else {
+          if (warp_id < bc){
+            inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+          }
+        }
         __syncthreads();
         //////////////////////////////
 
@@ -512,14 +534,30 @@ __global__ void winograd2DFused(const float *input, const float *weight, float *
         if (count+bc < C * num_split) {
           int bz2 = (count + bc) / C;
           int i2 = (count + bc) % C;
-          for(int m = 0; m < (splitH + 1); m++) {
-            for(int n = 0; n < (splitW + 1); n++) {
-              f_y = yBase + m + H_start[bz2];
-              f_x = xBase + n + W_start[bz2];
-              if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
-                prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
-              } else {
-                prefetch1[m * (splitW + 1) + n] = float(0);
+          if (bc == 8) {
+            for(int m = 0; m < (splitH + 1); m++) {
+              for(int n = 0; n < (splitW + 1); n++) {
+                f_y = yBase + m + H_start[bz2];
+                f_x = xBase + n + W_start[bz2];
+                if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                  prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                } else {
+                  prefetch1[m * (splitW + 1) + n] = float(0);
+                }
+              }
+            }
+          } else {
+            if (warp_id < bc){
+              for(int m = 0; m < (splitH + 1); m++) {
+                for(int n = 0; n < (splitW + 1); n++) {
+                  f_y = yBase + m + H_start[bz2];
+                  f_x = xBase + n + W_start[bz2];
+                  if((f_x > -1) && (f_x < W) && (f_y > -1) && (f_y < H)) {
+                    prefetch1[m * (splitW + 1) + n] = input[((((warp_id + i2) * H + f_y) * W + f_x)) * B + lane_id];
+                  } else {
+                    prefetch1[m * (splitW + 1) + n] = float(0);
+                  }
+                }
               }
             }
           }
@@ -693,7 +731,7 @@ int main() {
     wNorm2WinoTransform2D <float> <<<gDim2, bDim2>>> (d_B, tmp_weight_buffer_fused, kernel_stride_gpu, H_start_gpu, H_end_gpu, W_start_gpu, W_end_gpu, FILTER, FILTER, BC, BK);
 
     const int bn = 32;
-    const int bc = 8;
+    const int bc = 7;
     const int bk = 64;
     const int maxbytes = 67584;//16 * (bn * bc + bn * 33) * 4; // 82 KB
     cudaFuncSetAttribute(winograd2DFused<bn, bc, bk, 3, 3>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);

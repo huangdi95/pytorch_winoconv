@@ -11,7 +11,7 @@ __device__ __forceinline__ void kernel_16_gmem(const float *input, float *input_
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
@@ -84,7 +84,7 @@ __device__ __forceinline__ void kernel_16_smem(const float *input, float *input_
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
@@ -196,7 +196,7 @@ __global__ void winograd2DFused_16(const float *input, const float *weight, floa
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
@@ -299,7 +299,7 @@ __global__ void winograd2DFused_8(const float *input, const float *weight, float
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
@@ -398,7 +398,7 @@ __global__ void winograd2DFused_4(const float *input, const float *weight, float
         int i = count % C;
    
         //////// input transform //////
-        inputNorm2WinoTransform2D_fused<splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
+        inputNorm2WinoTransform2D_fused<bn, bc, splitH, splitW>(input_patch, input_smem, warp_id, lane_id);
         __syncthreads();
         //////////////////////////////
 
