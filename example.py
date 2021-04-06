@@ -2,8 +2,10 @@ import torch
 import MakePytorchPlusPlus as MPP
 #from WinoConv import Wino
 import dwm
+import dwm_fused
 import matrix_conv
 import matrix_conv3d
+import time 
 #import matrix_conv3d
 
 #
@@ -96,11 +98,39 @@ import matrix_conv3d
 #    print(x_trans)
 #    print(x_trans.shape)
 
+def test_dwm2d_fused():
+#    x = torch.ones(32, 32, 112, 256).cuda()
+#    w = torch.ones(32, 32, 7, 7).cuda()
+    x = torch.rand(32, 21, 224, 512).cuda()
+    w = torch.rand(64, 21, 9, 9).cuda()
+    for i in range(100):
+        dwm_fused.dwm2d(x.float(), w.float(), None, (1, 1))
+    torch.cuda.synchronize()
+    t1 = time.perf_counter()
+    out1 = dwm_fused.dwm2d(x.float(), w.float(), None, (1, 1))
+#    out3 = matrix_conv.conv16(x.half(), w.half())
+    torch.cuda.synchronize()
+    t2 = time.perf_counter()
+    for i in range(100):
+        torch.nn.functional.conv2d(x.float(), w.float(), bias=None, stride=1, padding=0, dilation=1, groups=1)
+    torch.cuda.synchronize()
+    t3 = time.perf_counter()
+    out2 = torch.nn.functional.conv2d(x.float(), w.float(), bias=None, stride=1, padding=0, dilation=1, groups=1)
+    torch.cuda.synchronize()
+    t4 = time.perf_counter()
+    print('dwm:', t2 - t1)
+    print('cudnn:', t4 - t3)
+#    print(((out1.double() - out2)/out2).abs().mean())
+#    print(((out3.double() - out2)/out2).abs().mean())
+#    print((out3.double()).abs().mean())
+#    print(((out1.double() - out3.double())/out1.double()).abs().mean())
+    return out1.double()
+
 def test_dwm2d():
-    x = torch.rand(10, 32*7, 10, 10).cuda()
-    w = torch.rand(32, 32*7, 7, 7).cuda()
+    x = torch.rand(10, 32, 10, 10).cuda()
+    w = torch.rand(32, 32, 7, 7).cuda()
     out1 = dwm.dwm2d(x.float(), w.float(), None, (1, 1))
-    out3 = matrix_conv.conv16(x.half(), w.half())
+#    out3 = matrix_conv.conv16(x.half(), w.half())
     out2 = torch.nn.functional.conv2d(x.double(), w.double(), bias=None, stride=1, padding=0, dilation=1, groups=1)
     print(((out1.double() - out2)/out2).abs().mean())
 #    print(((out3.double() - out2)/out2).abs().mean())
@@ -153,7 +183,7 @@ def test_matrix_conv3d_fp16():
     
 
 if __name__ == '__main__':
-    test_dwm2d()
+    test_dwm2d_fused()
 #    test_dwm3d()
 #    test_matrix_conv2d()
 #    test_matrix_conv3d()
