@@ -10,3 +10,18 @@ void DWM(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
 template <typename Dtype>
 void DWM2D(at::Tensor Input, at::Tensor Weight, at::Tensor Output, int stride,
               at::Tensor tmp_input_buffer, at::Tensor tmp_weight_buffer, at::Tensor tmp_product_buffer, at::Tensor tmp_ptr_buffer, int num_split, at::Tensor H_s, at::Tensor H_e, at::Tensor W_s, at::Tensor W_e, at::Tensor tmp_out_buffer);
+
+template <typename Dtype>
+void FDWM2D(
+  at::Tensor Input,
+  at::Tensor Weight,
+  at::Tensor Output,
+  int stride,
+  at::Tensor tmp_weight_buffer,
+  int num_split,
+  at::Tensor H_s,
+  at::Tensor H_e,
+  at::Tensor W_s,
+  at::Tensor W_e,
+  at::Tensor kernel_stride,
+  at::Tensor tmp_out_buffer);
